@@ -4,7 +4,7 @@ using FT
 
 ft = FT.EmptyFT()
 E = 'F'
-if false
+if true
 for i in 'A':E
     ft = FT.conj(ft,i)
     println(ft)
@@ -57,8 +57,17 @@ function torture(N, verb=false)
         end        
 verb &&     println(k, " ",i, ft)
     end
-    
+    n = N
+    ft = FT.concat(randomft(n), randomft(n,n+1))
+    FT.traverse(x->@test(isa(x, Int)), ft)
+    j = 1
+    for i in ft
+        @test j==i
+        j += 1
+    end 
 end
 
 
-for i in 1:50; torture(100); end
+
+for i in 1:50; torture(200); end
+ft = FT.concat(randomft(10), randomft(10,11))

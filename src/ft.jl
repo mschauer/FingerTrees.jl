@@ -1,6 +1,11 @@
 module FT
 import Base.reduce
 export reduce
+import Base.start, Base.next, Base.done
+export start, next, done, concat
+import Base.length
+export length
+
 abstract FingerTree{T}
 abstract Tree23{T}
 
@@ -60,6 +65,7 @@ len(digit::DigitFT) = digit.len
 len(_::EmptyFT) = 0
 len(deep::DeepFT) = deep.len
 len(n::SingleFT) = len(n.a)
+length(ft::FingerTree) = len(ft)
 
 isempty(_::EmptyFT) = true
 isempty(_::FingerTree) = false
@@ -68,6 +74,21 @@ width(digit::DigitFT) = length(digit.child)
 width(n::Node23) = length(n.child)
 
 conj(a,b) = conjl(a,b)
+function conjl(t) 
+    ft = t[end]
+    for i in length(t)-1:-1:1
+        ft = conj(t[i], ft)
+    end
+    ft
+end
+function conj(t) 
+    ft = t[1]
+    for x in t[2:end]
+        ft = conj(ft, x)
+    end
+    ft
+end
+
 function conjl(a, digit::DigitFT)
     assert(width(digit) < 4)
     DigitFT(box(a), digit.child...)
@@ -121,12 +142,15 @@ function splitl(_::EmptyFT)
 end
 splitr(l::EmptyFT) = splitl(l)
 
-function conjl(a, single::SingleFT)
-    DeepFT(box(a), EmptyFT{fteltype(a)}(), single.a)
+function conjl{T}(a::Tree23{T}, single::SingleFT{T})
+    DeepFT(a, EmptyFT{fteltype(a)}(), single.a)
 end
-function conj(single::SingleFT, a)
-    DeepFT(single.a, EmptyFT{fteltype(a)}(), box(a))
+conjl{T}(a::T, single::SingleFT{T}) = conj(box(a), single)
+
+function conj{T}(single::SingleFT{T}, a::Tree23{T})
+    DeepFT(single.a, EmptyFT{fteltype(a)}(), a)
 end
+conj{T}(single::SingleFT{T}, a::T) = conj(single, box(a))
 
 function splitl(single::SingleFT)
     unbox(single.a), EmptyFT{fteltype(single.a)}()
@@ -134,21 +158,23 @@ end
 function splitr(single::SingleFT)
     unbox(single.a), EmptyFT{fteltype(single.a)}()
 end
-
-function conjl(a, ft::DeepFT)
+conjl{T}(a::T, ft::DeepFT{T}) = conjl(box(a), ft)
+function conjl{T}(a::Tree23{T}, ft::DeepFT{T})
     if width(ft.left) < 4
-        DeepFT(conj(box(a),ft.left), ft.succ, ft.right)
+        DeepFT(conj(a,ft.left), ft.succ, ft.right)
     else
         f = (Node23(ft.left.child[2:4]...))
-        DeepFT(DigitFT(box(a), ft.left.child[1]), conj(f,ft.succ), ft.right)
+        DeepFT(DigitFT(a, ft.left.child[1]), conj(f,ft.succ), ft.right)
     end
 end
-function conj(ft::DeepFT, a)
+
+conj{T}(ft::DeepFT{T}, a::T) = conj(ft, box(a))
+function conj{T}(ft::DeepFT{T}, a::Tree23{T})
     if width(ft.right) < 4
-        DeepFT(ft.left, ft.succ, conj(ft.right, box(a)))
+        DeepFT(ft.left, ft.succ, conj(ft.right, a))
     else        
         f = Node23(ft.right.child[1:3]...)
-        DeepFT(ft.left, conj(ft.succ, f), DigitFT(ft.right.child[4], box(a)))
+        DeepFT(ft.left, conj(ft.succ, f), DigitFT(ft.right.child[4], a))
     end
 end
 
@@ -189,36 +215,6 @@ function splitr(ft::DeepFT)
     end
 end
 
-#for (fname, cons) in ((:appendr, :conj), (:appendl, :cons)) @eval begin
-#shoud appenl work for iterators?
-for (fname, cons) in ((:appendr, :conj),) @eval begin
-    function ($fname)(ft, iter)
-        state = start(iter)
-        while true
-            if done(iter, state)
-                break
-            end
-            k, state = next(iter, state)
-            ft = ($cons)(ft, k)
-        end
-        ft
-    end
-end end
-
-function appendl(ft, t::Tuple) 
-    for i in length(t):-1:1
-        ft = conj(t[i], ft)
-    end
-    ft
-end
-function appendr(ft, t::Tuple)
-    for x in t
-        ft = conj(ft, x)
-    end
-    ft
-end
-
-
 Base.reduce(op::Function, v, l::Leaf23) = op(v, l.a)
 Base.reduce(op::Function, v, ::EmptyFT) = v
 Base.reduce(op::Function, v, t::SingleFT) = reduce(op, v, ft.a)
@@ -236,7 +232,7 @@ end
 
 traverse(op::Function, l::Leaf23) = op(l.a)
 traverse(op::Function,  ::EmptyFT) = return
-traverse(op::Function, t::SingleFT) = traverse(op, ft.a)
+traverse(op::Function, ft::SingleFT) = traverse(op, ft.a)
 function traverse{T<:Union(DigitFT, Node23)}(op::Function,n::T)
     for k in 1:width(n)
         traverse(op, n.child[k])
@@ -248,19 +244,35 @@ function traverse(op::Function, ft::DeepFT)
     traverse(op, ft.right)
 end
 
-# Example
-# trav = () -> FT.traverse(produce, FT.randomft(100))
-# t = Task(trav)
-# while !(t.state==:done) print(consume(t)); end
-
-    app3(l::SingleFT, ts, r::SingleFT) = conj(l.a, appendl(r, ts))
-    app3(::EmptyFT, ts, r::EmptyFT) = appendl(r, ts)
-    app3(::EmptyFT, ts, r::SingleFT) = appendl(r, ts)
-    app3(l::SingleFT, ts, ::EmptyFT) = appendr(l, ts)
-app3(::EmptyFT, ts, r) = appendl(r, ts)
-app3(l, ts, ::EmptyFT) = appendr(l, ts)
-app3(x::SingleFT, ts, r) = conj(x.a, appendl(r, ts))
-app3(l, ts, x::SingleFT) = conj(appendr(l, ts), x.a)
+# Scheme:
+# state = start(I)
+# while !done(I, state)
+#   (i, state) = next(I, state)
+#     # body
+# end
+# rather slow
+function start(ft::FingerTree)
+    trav = () -> FT.traverse(produce, ft)
+    t = Task(trav)
+    i = consume(t)
+    (i, t)
+end
+function next(ft::FingerTree, state)
+    state[1], (consume(state[2]), state[2])
+end
+function done(ft::FingerTree, state)
+    state[2].state==:done
+end
+ 
+ 
+    app3(l::SingleFT, ts, r::SingleFT) = conj(l.a, conjl(tuple(ts..., r)))
+    app3(::EmptyFT, ts, r::EmptyFT) = conjl(tuple(ts..., r))
+    app3(::EmptyFT, ts, r::SingleFT) = conjl(tuple(ts..., r))
+    app3(l::SingleFT, ts, ::EmptyFT) = conj(tuple(l, ts...))
+app3(::EmptyFT, ts, r) = conjl(tuple(ts..., r))
+app3(l, ts, ::EmptyFT) = conj(tuple(l, ts...))
+app3(x::SingleFT, ts, r) = conj(x.a, conjl(tuple(ts..., r)))
+app3(l, ts, x::SingleFT) = conj(conj(tuple(l, ts...)), x.a)
 
 
 nodes(a,b) = (Node23(a, b),)
@@ -271,7 +283,6 @@ nodes(a,b,c,xs...) = tuple(Node23(a,b,c), nodes(xs...)...)
 app3(l::DeepFT, ts, r::DeepFT) = 
     DeepFT(l.left, app3(l.succ, nodes(l.right.child..., ts..., r.left.child...),r.succ),  r.right)
 concat(l::FingerTree, r::FingerTree) = app3(l, (), r)
-
 
 Base.show(io::IO, l::Leaf23) = print(io, "'", l.a)
 Base.show(io::IO, d::DigitFT) = print(io, d.child...)
