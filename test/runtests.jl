@@ -37,10 +37,14 @@ end
 
 function torture(N, verb=false)
     ft = randomft(N, 1, verb)
-        
+    
+    
+    # checks integrity
+    FT.travstruct((x,d) -> Nothing(), ft)    
     for i in 1:N
         assert(ft[i] == i)
     end
+    
     
     b = randbool(N)
     l = 1
@@ -57,9 +61,10 @@ function torture(N, verb=false)
         end        
 verb &&     println(k, " ",i, ft)
     end
+    assert(FT.isempty(ft))
     n = N
     ft = FT.concat(randomft(n), randomft(n,n+1))
-    FT.traverse(x->@test(isa(x, Int)), ft)
+    FT.traverse((x,l)->@test(isa(x, Int)), ft)
     j = 1
     for i in ft
         @test j==i
