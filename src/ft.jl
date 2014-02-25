@@ -1,13 +1,16 @@
 module FT
 import Base.reduce
-export reduce
+#export reduce
 import Base.start, Base.next, Base.done
-export start, next, done, concat
+#export start, next, done, concat
 import Base.length
-export length
+#export length
+
+export FingerTree, conjl, conj, splitl, splitr, len, fttree, flat, split, travstruct, traverse, concat, checkinteg
 
 abstract FingerTree{T}
 abstract Tree23{T}
+
 
 immutable Leaf23{T} <: Tree23{T}
     a::T
@@ -15,16 +18,38 @@ end
 immutable Node23{T} <: Tree23{T}
     child::NTuple{Any, Tree23{T}}
     len::Int
-    Node23(a, b) = new((a,b), len(a)+len(b))
-    Node23(a, b, c) = new((a,b,c), len(a)+len(b)+len(c))
+    depth::Int
+    function Node23(a, b) 
+        if !(dep(a)==dep(b)) error("Try to construct uneven node") end
+        new((a,b), len(a)+len(b), dep(a)+1)
+    end
+    function Node23(a, b, c) 
+        if !(dep(a)==dep(b)==dep(c)) error("Try to construct uneven node") end
+        new((a,b,c), len(a)+len(b)+len(c), dep(a)+1)
+    end
 end
 Node23{T}(a::Tree23{T}...) = Node23{T}(a...)
 
 immutable DigitFT{T}
     child::NTuple{Any, Tree23}
     len::Int
-    DigitFT() = new((), 0)
-    DigitFT(b...) = new(b, mapreduce(len,+,b))
+    depth::Int
+    DigitFT() = new((),0,0)
+    function DigitFT(a)
+        new((a,), len(a), dep(a))
+    end
+    function DigitFT(a,b) 
+        if dep(a)!=dep(b) error("Try to construct uneven digit $b") end
+        new((a,b), len(a)+len(b), dep(a))
+    end
+    function DigitFT(a,b,c) 
+        if !(dep(a)==dep(b)==dep(c)) error("Try to construct uneven digit $b ") end
+        new((a,b,c), len(a)+len(b)+len(c), dep(a))
+    end
+    function DigitFT(a,b,c,d) 
+        if !(dep(a)==dep(b)==dep(c)==dep(d)) error("Try to construct uneven digit $b") end
+        new((a,b,c,d), +(len(a),len(b),len(c),len(d)), dep(a))
+    end    
 end
 
 DigitFT{T}(b::T...) = DigitFT{T}(map(box,b)...)
@@ -43,12 +68,44 @@ immutable DeepFT{T} <: FingerTree{T}
     succ::FingerTree{T}
     right::DigitFT{T}
     len::Int
-    DeepFT(l, s, r) = new(l, s, r, len(l) + len(s) + len(r))
+    depth::Int
+    function DeepFT(l, s::Union(SingleFT, DeepFT), r)
+        if !(dep(l) == dep(s) - 1 == dep(r))
+            dump(l); dump(s);dump(r)
+            error("Attempt to construct uneven finger tree")
+        end
+        new(l, s, r, len(l) + len(s) + len(r), dep(l))
+    end
+    function DeepFT(l, r)
+        if !(dep(l) == dep(r))
+            dump(l); dump(r)
+            error("Attempt to construct uneven finger tree")
+        end
+        new(l,EmptyFT{T}(), r, len(l) + len(r), dep(l))
+    end
+    function DeepFT(l, s::EmptyFT, r)
+        if !(dep(l) == dep(r))
+            dump(l); dump(r)
+            error("Attempt to construct uneven finger tree")
+        end
+        new(l,s, r, len(l) + len(r), dep(l))
+    end
+    
 end
-DeepFT{T}(l::DigitFT{T}, s, r::DigitFT{T}) = DeepFT{T}(l, s, r)
+DeepFT{T}(l::DigitFT{T}, s, r::DigitFT{T}) = DeepFT{T}(l, s, r) 
 DeepFT{T}(l::Tree23{T}, s, r::Tree23{T}) = DeepFT{T}(DigitFT{T}(l), s, DigitFT{T}(r))
-DeepFT{T}(l::DigitFT{T}, _::EmptyFT, r::DigitFT{T}) = DeepFT{T}(l, EmptyFT{T}(), r)
-DeepFT{T}(l::Tree23{T}, _::EmptyFT, r::Tree23{T}) = DeepFT{T}(DigitFT{T}(l), EmptyFT{T}(), DigitFT{T}(r))
+DeepFT{T}(l::DigitFT{T}, r::DigitFT{T}) = DeepFT{T}(l, r)
+DeepFT{T}(l::Tree23{T}, r::Tree23{T}) = DeepFT{T}(DigitFT{T}(l), DigitFT{T}(r))
+DeepFT{T}(l::DigitFT{T}, _::EmptyFT, r::DigitFT{T}) = DeepFT{T}(l, r)
+#DeepFT{T}(l::Tree23{T}, _::EmptyFT, r::Tree23{T}) = DeepFT{T}(DigitFT{T}(l), DigitFT{T}(r))
+
+
+dep(_::Leaf23) = 0
+dep(n::Node23) = n.depth
+dep(d::DigitFT) = d.depth
+dep(s::SingleFT) = dep(s.a)
+dep(_::EmptyFT) = 0
+dep(ft::DeepFT) = ft.depth
 
 
 box(b) = Leaf23(b)
@@ -59,6 +116,7 @@ unbox(b) = b
 fteltype(b) = typeof(b)
 fteltype{T}(b::Tree23{T}) = T
 fteltype{T}(b::FingerTree{T}) = T
+fteltype{T}(b::DigitFT{T}) = T
 
 # TODO: allow other counting functions
 len(n::Leaf23) = 1
@@ -94,14 +152,24 @@ function conj(t)
     ft
 end
 
-fttree(T, ft::FingerTree) = ft
-function fttree(T, t)
+fttree2(T, ft::FingerTree) = ft
+function fttree2(T, t)
     ft = EmptyFT{T}()
     for x in t
         ft = conj(ft, x)
     end
     ft
 end
+
+fttree(dchild::NTuple{1}) = SingleFT(dchild[1])
+fttree(dchild::NTuple{2}) = DeepFT(dchild[1], dchild[2])
+fttree(dchild::NTuple{3}) = DeepFT(DigitFT(dchild[1:2]...), DigitFT(dchild[3]))
+fttree(dchild::NTuple{4}) = DeepFT(DigitFT(dchild[1:2]...), DigitFT(dchild[3:4]...))
+fttree(dchild::NTuple{5}) = DeepFT(DigitFT(dchild[1:3]...), DigitFT(dchild[4:5]...))
+fttree(dchild::NTuple{6}) = DeepFT(DigitFT(dchild[1:3]...), DigitFT(dchild[4:6]...))
+fttree(dchild::NTuple{7}) = DeepFT(DigitFT(dchild[1:4]...), DigitFT(dchild[5:7]...))
+fttree(dchild::NTuple{7}) = DeepFT(DigitFT(dchild[1:4]...), DigitFT(dchild[5:8]...))
+
 
 function conjl(a, digit::DigitFT)
     assert(width(digit) < 4)
@@ -117,7 +185,7 @@ function splitl{T}(digit::DigitFT{T})
 end
 function splitr{T}(digit::DigitFT{T})
     assert(width(digit) > 0)
-    digit.child[end], DigitFT{T}(digit.child[1:end-1]...)
+    DigitFT{T}(digit.child[1:end-1]...), digit.child[end]
 end
 
 Base.getindex(leaf::Leaf23, i) = i != 1 ? throw(BoundsError()) : leaf.a
@@ -153,22 +221,19 @@ end
 splitr(l::EmptyFT) = splitl(l)
 
 function conjl{T}(a::Tree23{T}, single::SingleFT{T})
-    DeepFT(a, EmptyFT{fteltype(a)}(), single.a)
+    DeepFT(a, single.a)
 end
-#conjl{T}(a::T, single::SingleFT{T}) = conj(box(a), single)
 
 function conj{T}(single::SingleFT{T}, a::Tree23{T})
-    DeepFT(single.a, EmptyFT{fteltype(a)}(), a)
+    DeepFT(single.a, a)
 end
-#conj{T}(single::SingleFT{T}, a::T) = conj(single, box(a))
 
 function splitl(single::SingleFT)
     unbox(single.a), EmptyFT{fteltype(single.a)}()
 end
 function splitr(single::SingleFT)
-    unbox(single.a), EmptyFT{fteltype(single.a)}()
+     EmptyFT{fteltype(single.a)}(), unbox(single.a)
 end
-#conjl{T}(a::T, ft::DeepFT{T}) = conjl(box(a), ft)
 function conjl{T}(a::Tree23{T}, ft::DeepFT{T})
     if width(ft.left) < 4
         DeepFT(conj(a,ft.left), ft.succ, ft.right)
@@ -178,7 +243,6 @@ function conjl{T}(a::Tree23{T}, ft::DeepFT{T})
     end
 end
 
-#conj{T}(ft::DeepFT{T}, a::T) = conj(ft, box(a))
 function conj{T}(ft::DeepFT{T}, a::Tree23{T})
     if width(ft.right) < 4
         DeepFT(ft.left, ft.succ, conj(ft.right, a))
@@ -207,41 +271,40 @@ function splitl(ft::DeepFT)
     end
 end
 function splitr(ft::DeepFT)
-    a, as = splitr(ft.right)
+    as, a= splitr(ft.right)
     if width(as) > 0
-        return unbox(a), DeepFT(ft.left, ft.succ, as)
+        return DeepFT(ft.left, ft.succ, as), unbox(a)
     else
         if isempty(ft.succ) 
-            b, bs = splitr(ft.left)
+            bs, b = splitr(ft.left)
             if width(bs) > 0
-                return unbox(a), DeepFT(bs, ft.succ, DigitFT(b))
+                return DeepFT(bs, ft.succ, DigitFT(b)), unbox(a)
             else
-                return unbox(a), SingleFT(b)
+                return SingleFT(b), unbox(a)
             end
         else
-             c, gt = splitr(ft.succ)
-             return unbox(a), DeepFT(ft.left, gt, DigitFT(c.child...))
+             gt, c = splitr(ft.succ)
+             return DeepFT(ft.left, gt, DigitFT(c.child...)), unbox(a)
         end
     end
 end
 
 function split(ft::EmptyFT, i)
-    ft, nothing, ft
+    error("can't split empty FingerTree")
 end
 
 function split(ft::SingleFT, i)
     if isa(ft.a, Node23) return split(ft.a, i) end
     
     e = EmptyFT{fteltype(ft)}() 
-    return e, ft, e
+    return e, unbox(ft.a), e
 end
 
 function splitv(t, i)
-    println(i, t)
-    t[1:i-1], t[i], t[i+1:end]
+    t[1:i-1], unbox(t[i]), t[i+1:end]
 end
 
-function split(n::Node23, i)
+function split(n::Union(Node23,DigitFT), i)
     for k in 1:width(n)
         j = len(n.child[k]) 
         if i <= j 
@@ -251,38 +314,63 @@ function split(n::Node23, i)
     throw(BoundsError())
 end
 
-function split(f::Leaf23, i) 
-    assert(i == 1)
-    return (), f, ()
-end
 
-split(ft::DigitFT, i) = splitv(ft.child, i)
 function flat(xs)
      v = Array(fteltype(xs), len(xs))
      traverse((x, i) -> (v[i] = x;), xs)
      v
 end
 
+rotr(d, ft::EmptyFT) = fttree(d.child)
+function rotr(d, ft)
+    ft, x = splitr(ft)
+    y = isa(x, Node23) ? x.child : (box(x),)
+    println("X")
+    if isa(ft, SingleFT) && isa(ft.a, Leaf23) 
+        d = isa(d,DigitFT)? d.child : d
+        return fttree(tuple(d..., ft.a, y...)) 
+    end
+    DeepFT(DigitFT(d.child...), ft, DigitFT(y...))
+    
+    
+end
+rotl(ft::EmptyFT, d) = fttree(d.child)
+function rotl(ft,d)
+    x, ft = splitl(ft)
+    y = isa(x, Node23) ? x.child :(box(x),) 
+    if isa(ft, SingleFT) && isa(ft.a, Leaf23) return fttree(tuple(y..., ft.a, d.child...)) end
+
+#    if (isa(ft, SingleFT)) return DeepFT(y, ft.a, d.child) end
+    DeepFT(DigitFT(y...), ft, DigitFT(d.child...))
+end
+
+ 
+deepl(t::(), ft, d) = rotl(ft, d) 
+deepl(t, ft, d) = DeepFT(DigitFT(t...), ft, d)
+
+deepr(d, ft, t::()) = rotr(d, ft) 
+deepr(d, ft, t) = DeepFT(d, ft, DigitFT(t...))
+
 function split{T}(ft::DeepFT{T}, i)
     j = len(ft.left)
     if i <= j #descent
         l, x, r = split(ft.left, i) 
-        return fttree(T, l), x, DeepFT(DigitFT{T}(r...), ft.succ, ft.right)
+        return fttree2(T, l), x, deepl(r, ft.succ, ft.right)
     end
     i -= j; j = len(ft.succ)
     if i <= j 
         ml, xs, mr = split(ft.succ, i)    
         i -= len(ml)
-        l, x, r =  split(xs, i) 
-        ml = fttree(T, ml)
-        mr = fttree(T, mr)
+        l, x, r =  isa(xs,Tree23) ? split(xs, i) : ((),xs,())
+        ml = fttree2(T, ml)
+        mr = fttree2(T, mr)
 
-        return DeepFT(ft.left, ml, DigitFT{T}(l...)), x, DeepFT(DigitFT{T}(r...), mr, ft.right)
+        return deepr(ft.left, ml, l), x, deepl(r, mr, ft.right)
     end
     i -= j; j = len(ft.right)
     if i <= j 
         l, x, r = split(ft.right, i) 
-        return DeepFT(ft.left, ft.succ, DigitFT{T}(l...)), x, fttree(T, r)
+        return deepr(ft.left, ft.succ, l), x, fttree2(T, r)
     end
     throw(BoundsError())
 end
@@ -337,6 +425,26 @@ function travstruct(op::Function, ft::DeepFT, d)
 end
 travstruct(op, ft) = travstruct(op, ft, 1)
 
+
+checkinteg(l::Leaf23, d) = (d == 0)
+checkinteg( ::EmptyFT, d) = return true
+checkinteg( ft::SingleFT, d) = checkinteg(ft.a, d-1)
+function checkinteg{T<:Union(DigitFT, Node23)}(n::T, d)
+    r = true
+    for k in 1:width(n)
+        r = r && checkinteg(n.child[k], d-1)
+    end
+    r
+end
+function checkinteg(ft::DeepFT, d)
+    checkinteg(ft.left, d) && checkinteg(ft.succ, d + 1) && checkinteg(ft.right, d)
+end
+checkinteg(ft) = checkinteg(ft, 1)
+function chk(ft) 
+ !checkinteg(ft) && (dump(ft); error("Malformed finger tree"))
+ ft
+end
+
 # Scheme:
 # state = start(I)
 # while !done(I, state)
@@ -376,6 +484,8 @@ nodes(a,b,c,xs...) = tuple(Node23(a,b,c), nodes(xs...)...)
 app3(l::DeepFT, ts, r::DeepFT) = 
     DeepFT(l.left, app3(l.succ, nodes(l.right.child..., ts..., r.left.child...),r.succ),  r.right)
 concat(l::FingerTree, r::FingerTree) = app3(l, (), r)
+concat(l::FingerTree,x, r::FingerTree) = app3(l, (x,), r)
+
 
 Base.show(io::IO, l::Leaf23) = print(io, "'", l.a)
 Base.show(io::IO, d::DigitFT) = print(io, d.child...)
@@ -383,5 +493,6 @@ Base.show(io::IO, n::Node23) = print(io, "^", n.child..., "")
 Base.show(io::IO, d::DeepFT) = print(io, "(", d.left, " .. ", d.succ, " .. ", d.right, ")")
 Base.show(io::IO, d::SingleFT) = print(io, "(", d.a, ")")
 Base.show(io::IO, d::EmptyFT) = print(io, "(/)")
+
 
 end

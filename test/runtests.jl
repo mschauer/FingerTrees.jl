@@ -40,9 +40,9 @@ function torture(N, verb=false)
     
     
     # checks integrity
-    FT.travstruct((x,d) -> Nothing(), ft)    
+    @test FT.checkinteg( ft)    
     for i in 1:N
-        assert(ft[i] == i)
+        @test ft[i] == i
     end
     
     
@@ -55,7 +55,7 @@ function torture(N, verb=false)
             @test k == l
             l += 1
         else
-            k, ft = FT.splitr(ft)
+            ft, k = FT.splitr(ft)
             @test k == u
             u -= 1
         end        
@@ -70,9 +70,24 @@ verb &&     println(k, " ",i, ft)
         @test j==i
         j += 1
     end 
+    
+    i = rand(1:N);
+    a, j, b = FT.split(randomft(N), i)
+    a = FT.chk(a)
+    b = FT.chk(b)
+    @test FT.checkinteg(a)    
+    @test FT.checkinteg(b)    
+    for k in 1:i-1
+        @test a[k] == k
+    end
+    @test i==j
+    for k in i+1:N
+        @test b[k-i] == k
+    end
+    
 end
 
 
 
-for i in 1:50; torture(200); end
+for i in 1:50; torture(3); torture(10); torture(20); end
 ft = FT.concat(randomft(10), randomft(10,11))
