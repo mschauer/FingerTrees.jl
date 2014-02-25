@@ -1,10 +1,7 @@
 module FT
 import Base.reduce
-#export reduce
 import Base.start, Base.next, Base.done
-#export start, next, done, concat
 import Base.length
-#export length
 
 export FingerTree, conjl, conj, splitl, splitr, len, fttree, flat, split, travstruct, traverse, concat, checkinteg
 
@@ -97,7 +94,6 @@ DeepFT{T}(l::Tree23{T}, s, r::Tree23{T}) = DeepFT{T}(DigitFT{T}(l), s, DigitFT{T
 DeepFT{T}(l::DigitFT{T}, r::DigitFT{T}) = DeepFT{T}(l, r)
 DeepFT{T}(l::Tree23{T}, r::Tree23{T}) = DeepFT{T}(DigitFT{T}(l), DigitFT{T}(r))
 DeepFT{T}(l::DigitFT{T}, _::EmptyFT, r::DigitFT{T}) = DeepFT{T}(l, r)
-#DeepFT{T}(l::Tree23{T}, _::EmptyFT, r::Tree23{T}) = DeepFT{T}(DigitFT{T}(l), DigitFT{T}(r))
 
 
 dep(_::Leaf23) = 0
@@ -151,7 +147,12 @@ function conj(t)
     end
     ft
 end
-
+function conj(ft, t...)
+    for x in t[1:end]
+        ft = conj(ft, x)
+    end
+    ft
+end
 fttree2(T, ft::FingerTree) = ft
 function fttree2(T, t)
     ft = EmptyFT{T}()
@@ -161,14 +162,14 @@ function fttree2(T, t)
     ft
 end
 
-fttree(dchild::NTuple{1}) = SingleFT(dchild[1])
-fttree(dchild::NTuple{2}) = DeepFT(dchild[1], dchild[2])
-fttree(dchild::NTuple{3}) = DeepFT(DigitFT(dchild[1:2]...), DigitFT(dchild[3]))
-fttree(dchild::NTuple{4}) = DeepFT(DigitFT(dchild[1:2]...), DigitFT(dchild[3:4]...))
-fttree(dchild::NTuple{5}) = DeepFT(DigitFT(dchild[1:3]...), DigitFT(dchild[4:5]...))
-fttree(dchild::NTuple{6}) = DeepFT(DigitFT(dchild[1:3]...), DigitFT(dchild[4:6]...))
-fttree(dchild::NTuple{7}) = DeepFT(DigitFT(dchild[1:4]...), DigitFT(dchild[5:7]...))
-fttree(dchild::NTuple{7}) = DeepFT(DigitFT(dchild[1:4]...), DigitFT(dchild[5:8]...))
+fttree(a) = SingleFT(a)
+fttree(a,b) = DeepFT(a, b)
+fttree(a,b,c) = DeepFT(DigitFT(a,b), DigitFT(c))
+fttree(a,b,c,d) = DeepFT(DigitFT(a,b), DigitFT(c,d))
+fttree(a,b,c,d,e) = DeepFT(DigitFT(a,b,c), DigitFT(d,e))
+fttree(a,b,c,d,e,f) = DeepFT(DigitFT(a,b,c), DigitFT(d,e,f))
+fttree(a,b,c,d,e,f,g) = DeepFT(DigitFT(a,b,c,d), DigitFT(e,f,g))
+fttree(a,b,c,d,e,f,g,h) = DeepFT(DigitFT(a,b,c,d), DigitFT(e,f,g,h))
 
 
 function conjl(a, digit::DigitFT)
@@ -211,8 +212,8 @@ end
 conjl{T}(a::T, ft::FingerTree{T}) = conj(box(a), ft)
 conj{T}(ft::FingerTree{T}, a::T) = conj(ft, box(a))
 
-function conjl(a, _::EmptyFT)
-    SingleFT{fteltype(a)}(box(a))
+function conjl{T}(a::T, _::EmptyFT)
+    SingleFT(box(a))
 end
 conj(l::EmptyFT, a) = conjl(a, l)
 function splitl(_::EmptyFT)
@@ -321,26 +322,18 @@ function flat(xs)
      v
 end
 
-rotr(d, ft::EmptyFT) = fttree(d.child)
+rotr(d, ft::EmptyFT) = fttree(d.child...)
 function rotr(d, ft)
     ft, x = splitr(ft)
     y = isa(x, Node23) ? x.child : (box(x),)
-    println("X")
-    if isa(ft, SingleFT) && isa(ft.a, Leaf23) 
-        d = isa(d,DigitFT)? d.child : d
-        return fttree(tuple(d..., ft.a, y...)) 
-    end
+    if isa(ft, SingleFT) && isa(ft.a, Leaf23) return fttree(d.child..., ft.a, y...) end
     DeepFT(DigitFT(d.child...), ft, DigitFT(y...))
-    
-    
 end
-rotl(ft::EmptyFT, d) = fttree(d.child)
+rotl(ft::EmptyFT, d) = fttree(d.child...)
 function rotl(ft,d)
     x, ft = splitl(ft)
     y = isa(x, Node23) ? x.child :(box(x),) 
-    if isa(ft, SingleFT) && isa(ft.a, Leaf23) return fttree(tuple(y..., ft.a, d.child...)) end
-
-#    if (isa(ft, SingleFT)) return DeepFT(y, ft.a, d.child) end
+    if isa(ft, SingleFT) && isa(ft.a, Leaf23) return fttree(y..., ft.a, d.child...) end
     DeepFT(DigitFT(y...), ft, DigitFT(d.child...))
 end
 
@@ -353,7 +346,7 @@ deepr(d, ft, t) = DeepFT(d, ft, DigitFT(t...))
 
 function split{T}(ft::DeepFT{T}, i)
     j = len(ft.left)
-    if i <= j #descent
+    if i <= j
         l, x, r = split(ft.left, i) 
         return fttree2(T, l), x, deepl(r, ft.succ, ft.right)
     end
@@ -364,7 +357,6 @@ function split{T}(ft::DeepFT{T}, i)
         l, x, r =  isa(xs,Tree23) ? split(xs, i) : ((),xs,())
         ml = fttree2(T, ml)
         mr = fttree2(T, mr)
-
         return deepr(ft.left, ml, l), x, deepl(r, mr, ft.right)
     end
     i -= j; j = len(ft.right)
@@ -466,12 +458,12 @@ function done(ft::FingerTree, state)
 end
  
  
-    app3(l::SingleFT, ts, r::SingleFT) = conj(l.a, conjl(tuple(ts..., r)))
-    app3(::EmptyFT, ts, r::EmptyFT) = conj(tuple(r, ts...))
-    app3(::EmptyFT, ts, r::SingleFT) = conjl(tuple(ts..., r))
-    app3(l::SingleFT, ts, ::EmptyFT) = conj(tuple(l, ts...))
+    app3(l::SingleFT, ts, r::SingleFT) = fttree(l.a, ts..., r.a)
+    app3(::EmptyFT, ts, r::EmptyFT) = fttree(ts...)
+    app3(::EmptyFT, ts, r::SingleFT) = fttree(ts..., r.a)
+    app3(l::SingleFT, ts, ::EmptyFT) = fttree(l.a, ts...)
 app3(::EmptyFT, ts, r) = conjl(tuple(ts..., r))
-app3(l, ts, ::EmptyFT) = conj(tuple(l, ts...))
+app3(l, ts, ::EmptyFT) = conj(l, ts...)
 app3(x::SingleFT, ts, r) = conj(x.a, conjl(tuple(ts..., r)))
 app3(l, ts, x::SingleFT) = conj(conj(tuple(l, ts...)), x.a)
 
@@ -484,12 +476,12 @@ nodes(a,b,c,xs...) = tuple(Node23(a,b,c), nodes(xs...)...)
 app3(l::DeepFT, ts, r::DeepFT) = 
     DeepFT(l.left, app3(l.succ, nodes(l.right.child..., ts..., r.left.child...),r.succ),  r.right)
 concat(l::FingerTree, r::FingerTree) = app3(l, (), r)
-concat(l::FingerTree,x, r::FingerTree) = app3(l, (x,), r)
+concat(l::FingerTree,x, r::FingerTree) = app3(l, (box(x),), r)
 
 
 Base.show(io::IO, l::Leaf23) = print(io, "'", l.a)
 Base.show(io::IO, d::DigitFT) = print(io, d.child...)
-Base.show(io::IO, n::Node23) = print(io, "^", n.child..., "")
+Base.show(io::IO, n::Node23) = len(n) < 20 ? print(io, "^", n.child..., "") : print(" ... ")
 Base.show(io::IO, d::DeepFT) = print(io, "(", d.left, " .. ", d.succ, " .. ", d.right, ")")
 Base.show(io::IO, d::SingleFT) = print(io, "(", d.a, ")")
 Base.show(io::IO, d::EmptyFT) = print(io, "(/)")

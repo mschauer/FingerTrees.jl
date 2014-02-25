@@ -89,5 +89,5 @@ end
 
 
 
-for i in 1:50; torture(3); torture(10); torture(20); end
+for i in 1:50; torture(3); torture(10); torture(200); end
 ft = FT.concat(randomft(10), randomft(10,11))
