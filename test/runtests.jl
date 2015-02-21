@@ -1,32 +1,34 @@
-include(joinpath("../src/ft.jl"))
+include(joinpath("../src/FingerTrees.jl"))
 using Base.Test
-using FT
+using FingerTrees
+FingerTrees = FingerTrees
 
-ft = FT.EmptyFT()
-E = 'F'
-if true
-for i in 'A':E
-    ft = FT.conj(ft,i)
-    println(ft)
+function updown()
+    ft = FingerTrees.EmptyFT{Char}()
+    E = 'F'
+    for i in 'A':E
+        ft = FingerTrees.conj(ft,i)
+        println(ft)
+    end
+    for i in 'A':E
+            k , ft = FingerTrees.splitl(ft)
+            println(k, "\t", ft)
+    end
 end
-for i in 'A':E
-        k , ft = FT.splitl(ft)
-        println(k, "\t", ft)
-end
-end
+ft = updown()
 
 function randomft(N, start = 1, verb = false)
-    ft = FT.EmptyFT()
-    b = randbool(N)
+    ft = FingerTrees.EmptyFT{Int}()
+    b = bitrand(N)
     l = sum(b) + start - 1
     u = l+1
     i = 1
     for i in 1:N
         if b[i] 
-            ft = FT.conj(l, ft)
+            ft = FingerTrees.conjl(l, ft)
             l -= 1
         else 
-            ft = FT.conj(ft,u)
+            ft = FingerTrees.conj(ft,u)
             u += 1
         end
         verb &&     println(ft)
@@ -40,31 +42,31 @@ function torture(N, verb=false)
     
     
     # checks integrity
-    @test FT.checkinteg( ft)    
+    @test FingerTrees.checkinteg( ft)    
     for i in 1:N
         @test ft[i] == i
     end
     
     
-    b = randbool(N)
+    b = bitrand(N)
     l = 1
     u = N
     for i in 1:N
         if b[i]
-            k, ft = FT.splitl(ft)
+            k, ft = FingerTrees.splitl(ft)
             @test k == l
             l += 1
         else
-            ft, k = FT.splitr(ft)
+            ft, k = FingerTrees.splitr(ft)
             @test k == u
             u -= 1
         end        
 verb &&     println(k, " ",i, ft)
     end
-    assert(FT.isempty(ft))
+    assert(FingerTrees.isempty(ft))
     n = N
-    ft = FT.concat(randomft(n), randomft(n,n+1))
-    FT.traverse((x,l)->@test(isa(x, Int)), ft)
+    ft = FingerTrees.concat(randomft(n), randomft(n,n+1))
+    FingerTrees.traverse((x,l)->@test(isa(x, Int)), ft)
     j = 1
     for i in ft
         @test j==i
@@ -72,11 +74,11 @@ verb &&     println(k, " ",i, ft)
     end 
     
     i = rand(1:N);
-    a, j, b = FT.split(randomft(N), i)
-    a = FT.chk(a)
-    b = FT.chk(b)
-    @test FT.checkinteg(a)    
-    @test FT.checkinteg(b)    
+    a, j, b = FingerTrees.split(randomft(N), i)
+    a = FingerTrees.chk(a)
+    b = FingerTrees.chk(b)
+    @test FingerTrees.checkinteg(a)    
+    @test FingerTrees.checkinteg(b)    
     for k in 1:i-1
         @test a[k] == k
     end
@@ -90,4 +92,4 @@ end
 
 
 for i in 1:50; torture(3); torture(10); torture(200); end
-ft = FT.concat(randomft(10), randomft(10,11))
+ft = FingerTrees.concat(randomft(10), randomft(10,11))
