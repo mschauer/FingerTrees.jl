@@ -1,13 +1,15 @@
 include(joinpath("../src/FingerTrees.jl"))
 using Base.Test
 using FingerTrees
-FingerTrees = FingerTrees
+if !isdefined(:FT)
+    const FT = FingerTrees
+end
 
 function updown()
     ft = FingerTrees.EmptyFT{Char}()
     E = 'F'
     for i in 'A':E
-        ft = FingerTrees.conj(ft,i)
+        ft = FingerTrees.conjr(ft,i)
         println(ft)
     end
     for i in 'A':E
@@ -30,7 +32,7 @@ function randomft(N, start = 1, verb = false)
             ft = FingerTrees.conjl(l, ft)
             l -= 1
         else 
-            ft = FingerTrees.conj(ft,u)
+            ft = FingerTrees.conjr(ft,u)
             u += 1
         end
         verb &&     println(ft)
@@ -41,7 +43,7 @@ end
 
 randomft(12, true)
 
-function torture(N, verb=true)
+function torture(N, verb=false)
     ft = randomft(N, 1, verb)
     
     
@@ -76,7 +78,7 @@ verb &&     println(k, " ",i, ft)
         j += 1
     end 
     
-    i = rand(1:N);
+    i = rand(1:N)
     a, j, b = FingerTrees.split(randomft(N), i)
 #    a = FingerTrees.chk(a)
  #   b = FingerTrees.chk(b)
@@ -94,6 +96,6 @@ end
 
 
 torture(3); torture(10); torture(200);
-@time for i in 1:50; torture(3); torture(10); torture(200); end
+@time for i in 1:10; torture(3); torture(10); torture(200); end
 println("done")
 ft = FingerTrees.concat(randomft(10), randomft(10,11))
