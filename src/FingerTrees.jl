@@ -10,7 +10,7 @@ end
 
 
 
-immutable Node23{T, K} 
+immutable Node23{T, K<:Union(Char, Number)} 
     a::T
     b::T
     c::Nullable{T}
@@ -119,7 +119,7 @@ DeepFT{N,T, K}(l::DigitFT, r::DigitFT{N,T,K}) = DeepFT{K}(l, EmtpyFT{K}, r)
 DeepFT{N, K}(l::DigitFT{N, Node23,K}, r::DigitFT) = DeepFT{K}(l, EmptyFT{K}(), r) 
 DeepFT{T,K}(l::Node23{T,K}, r) = DeepFT{K}(DigitFT(l),EmptyFT{K}(), DigitFT(r)) 
 DeepFT{T}(l::T, r::T) = DeepFT{T}(DigitFT(l), EmptyFT{T}(), DigitFT(r))
-#DeepFT{N,M,T,K}(l::DigitFT{N,T,K}, e::EmptyFT{K}, r::DigitFT{M,T,K}) = DeepFT{K}(l, _,r)
+DeepFT{N,M,T,K}(l::DigitFT{N,T,K}, e::EmptyFT{K}, r::DigitFT{M,T,K}) = DeepFT{K}(l, _,r)
 
 
 dep(_) = 0
