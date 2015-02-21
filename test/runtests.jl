@@ -5,9 +5,8 @@ if !isdefined(:FT)
     const FT = FingerTrees
 end
 
-function updown()
+function updown(E)
     ft = FingerTrees.EmptyFT{Char}()
-    E = 'F'
     for i in 'A':E
         ft = FingerTrees.conjr(ft,i)
         println(ft)
@@ -17,8 +16,8 @@ function updown()
             println(k, "\t", ft)
     end
 end
-ft = updown()
-ft = updown()
+ft = updown('E')
+ft = updown('Z')
 
 
 function randomft(N, start = 1, verb = false)
@@ -80,10 +79,6 @@ verb &&     println(k, " ",i, ft)
     
     i = rand(1:N)
     a, j, b = FingerTrees.split(randomft(N), i)
-#    a = FingerTrees.chk(a)
- #   b = FingerTrees.chk(b)
- #   @test FingerTrees.checkinteg(a)    
- #   @test FingerTrees.checkinteg(b)    
     for k in 1:i-1
         @test a[k] == k
     end
