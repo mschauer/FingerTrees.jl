@@ -91,36 +91,35 @@ immutable DeepFT{K<:Union(Int,Char)} <: FingerTree{K}
     right::DigitFT#{T}
     len::Int
     depth::Int
-    function DeepFT(l, s::Union(DeepFT{K}, SingleFT{K}) , r)
-        if !(dep(l) == dep(s) - 1 == dep(r))
+    function DeepFT(l::DigitFT, s::FingerTree{K} , r::DigitFT)
+        if !(dep(l) == dep(s) - 1 == dep(r) || (isempty(s) && dep(l) == dep(r)))
             dump(l); dump(s);dump(r)
             error("Attempt to construct uneven finger tree")
         end
         new(l, s, r, len(l) + len(s) + len(r), dep(l))
     end
-    function DeepFT(l, s::EmptyFT{K}, r)
-        if !(dep(l) == dep(r))
+    function DeepFT(ll, s::FingerTree{K} , rr)
+        l = DigitFT(ll...)
+        r = DigitFT(rr...)
+        
+        if !(dep(l) == dep(s) - 1 == dep(r) || (isempty(s) && dep(l) == dep(r)))
             dump(l); dump(s);dump(r)
             error("Attempt to construct uneven finger tree")
         end
-        new(l, s, r, len(l) + len(r), dep(l))
-    end
-    function DeepFT(l, r)
-        if !(dep(l) == dep(r))
-            dump(l); dump(r)
-            error("Attempt to construct uneven finger tree")
-        end
-        new(l,EmptyFT{K}(), r, len(l) + len(r), dep(l))
+        new(l, s, r, len(l) + len(s) + len(r), dep(l))
     end
 end
-DeepFT{N, K}(l::DigitFT{N, Node23,K}, s::Union(SingleFT, DeepFT), r::DigitFT) = DeepFT{K}(l, s, r) 
-DeepFT{N, K}(l::DigitFT{N, K,K}, s::Union(SingleFT, DeepFT), r::DigitFT) = DeepFT{K}(l, s, r) 
-DeepFT{N,T, K}(l::DigitFT{N,T, K}, r::DigitFT) = DeepFT{K}(l, r)
-DeepFT{N,T, K}(l::DigitFT, r::DigitFT{N,T,K}) = DeepFT{K}(l, r)
-DeepFT{N, K}(l::DigitFT{N, Node23,K}, r::DigitFT) = DeepFT{K}(l, r) 
-DeepFT{T,K}(l::Node23{T,K}, r) = DeepFT{K}(DigitFT(l), DigitFT(r)) 
-DeepFT{T}(l::T, r::T) = DeepFT{T}(DigitFT(l), DigitFT(r))
-DeepFT{N,M,T,K}(l::DigitFT{N,T,K}, _::EmptyFT{K}, r::DigitFT{M,T,K}) = DeepFT{K}(l, r)
+DeepFT{N, K}(l::DigitFT{N, Node23,K}, s::FingerTree{K}, r::DigitFT) = DeepFT{K}(l, s, r) 
+DeepFT{N, K}(l::DigitFT{N, K,K}, s::FingerTree{K}, r::DigitFT) = DeepFT{K}(l, s, r) 
+DeepFT{K}(l, s::FingerTree{K}, r) = DeepFT{K}(l,s,r)
+DeepFT{T,K}(l::Node23{T,K}, s::FingerTree{K}, r) = DeepFT{K}(DigitFT(l), s, DigitFT(r)) 
+
+DeepFT{N,T, K}(l::DigitFT{N,T, K}, r::DigitFT) = DeepFT{K}(l, EmptyFT{K}, r)
+DeepFT{N,T, K}(l::DigitFT, r::DigitFT{N,T,K}) = DeepFT{K}(l, EmtpyFT{K}, r)
+DeepFT{N, K}(l::DigitFT{N, Node23,K}, r::DigitFT) = DeepFT{K}(l, EmptyFT{K}(), r) 
+DeepFT{T,K}(l::Node23{T,K}, r) = DeepFT{K}(DigitFT(l),EmptyFT{K}(), DigitFT(r)) 
+DeepFT{T}(l::T, r::T) = DeepFT{T}(DigitFT(l), EmptyFT{T}(), DigitFT(r))
+#DeepFT{N,M,T,K}(l::DigitFT{N,T,K}, e::EmptyFT{K}, r::DigitFT{M,T,K}) = DeepFT{K}(l, _,r)
 
 
 dep(_) = 0
@@ -251,8 +250,8 @@ end
 conjl(a, _::EmptyFT) = SingleFT(a)
 conjr(_::EmptyFT, a) = SingleFT(a)
 
-conjl(a, single::SingleFT) = DeepFT(a, single.a)
-conjr(single::SingleFT, a) = DeepFT(single.a, a)
+conjl{K}(a, single::SingleFT{K}) = DeepFT(a,EmptyFT{K}(), single.a)
+conjr{K}(single::SingleFT{K}, a) = DeepFT(single.a, EmptyFT{K}(),a)
 #conjl{T,K}(a::Node23{T,K}, single::SingleFT{K}) = DeepFT{K}(DigitFT1(a), DigitFT1(single.a))
 #conjr{T,K}(single::SingleFT{K}, a::Node23{T,K}) = DeepFT{K}(DigitFT1(single.a), DigitFT1(a))
 
