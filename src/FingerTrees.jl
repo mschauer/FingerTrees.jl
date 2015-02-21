@@ -411,11 +411,11 @@ end
 
  
 deepl(t::(), ft, d) = rotl(ft, d) 
-deepl(t::Node23, ft, d) = DeepFT(DigitFT(astuple(t)...), ft, d)
+deepl(t::Node23, ft, d) = DeepFT(DigitFT(t), ft, d)
 deepl(t, ft, d) = DeepFT(DigitFT(t...), ft, d)
 
 deepr(d, ft, t::()) = rotr(d, ft) 
-deepr(d, ft, t::Node23) = DeepFT(d, ft, DigitFT(astuple(t)...))
+deepr(d, ft, t::Node23) = DeepFT(d, ft, DigitFT(t))
 deepr(d, ft, t) = DeepFT(d, ft, DigitFT(t...))
 
 function split{T}(ft::DeepFT{T}, i)
@@ -486,6 +486,8 @@ function traverse(op::Function, ft::DeepFT, i)
 end
 traverse(op, ft) = (traverse(op, ft, 1);)
 
+
+#Traversal with a op that takes also the depth as input
 travstruct(op::Function, a, d) = (op(a, d);d)
 travstruct(op::Function,  ::EmptyFT, d) = return d
 travstruct(op::Function, ft::SingleFT, d) = travstruct(op, ft.a, d)
