@@ -411,7 +411,7 @@ function split(n::Node23, i)
         j = len(n.a) 
         i <= j  && return (), n.a, (n.b,get(n.c))
         i -= j; j = len(n.b) 
-        i <= j  && return (n.a,), n.b, (get(n.c))
+        i <= j  && return (n.a,), n.b, (get(n.c),)
         i -= j; j = len(get(n.c)) 
         i <= j  && return (n.a,n.b), get(n.c), ()
     end
@@ -443,7 +443,7 @@ deepl{T}(t::(), ft::NonEmptyFT{T}, dr::DigitFT) = begin
 end
 deepl{T}(d::DigitFT, ft::DeepFT{T}, dr::DigitFT) = DeepFT{T}(d, ft, dr)
 deepl{T}(t, ft::NonEmptyFT{T}, dr::DigitFT) = DeepFT{T}(DigitFT(t...), ft, dr)
-deepl{T}(t, ft::EmptyFT{T}, dr::DigitFT) = DeepFT{T}(DigitFT(t...), ft, dr)
+deepl{T}(t, ft::EmptyFT{T}, dr::DigitFT) = DeepFT{T}(digit(t), ft, dr)
 
 deepr{T}(d::DigitFT, ft::EmptyFT{T}, t::()) = toftree(d)
 deepr{T}(d::DigitFT, ft::NonEmptyFT{T}, t::()) = begin
@@ -490,6 +490,8 @@ function split{T}(ft::DeepFT{T}, i)
         ml = isempty(ml) ? EmptyFT{T}() : toftree(ml)
         mr = isempty(mr) ? EmptyFT{T}() : toftree(mr)
         println("join: $(ft.left) , $ml , $l")
+        println("join: $r , $mr , $(ft.right)")
+        dump(r)
         return deepr(ft.left, ml, l), x, deepl(r, mr, ft.right)
     end
     i -= j; j = len(ft.right)
