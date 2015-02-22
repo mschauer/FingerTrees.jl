@@ -8,8 +8,8 @@ export EmptyFT
 |>(a, b) = conjr(a,b)
 ..(a,b) = concat(a,b)
 
-abstract FingerTree{T}
-abstract Tree23{T<:Union(Number, Char)}
+abstract FingerTree{T} # T is the element type, can also represent a higher order tree of actual type FingerTree{Tree23{T}}
+abstract Tree23{T}
 
 immutable Leaf23{T} <: Tree23{T}
     a::T
@@ -43,23 +43,17 @@ immutable Node23{T} <: Tree23{T}
     end
 end
 
-
 Tree23{T}(a::T,b::T,c::T) = Leaf23{T}(a,b,c)
 Tree23{T}(a::T,b::T) = Leaf23{T}(a,b)
 Tree23{T}(a::Tree23{T},b::Tree23{T},c::Tree23{T}) = Node23{T}(a,b,c)
 Tree23{T}(a::Tree23{T},b::Tree23{T}) = Node23{T}(a,b)
 
-astuple(n::Tree23) = isnull(n.c) ? (n.a, n.b) : (n.a, n.b, get(n.c))
+abstract DigitFT{T,N}
 
-abstract DigitFT{T<:Union(Char, Number) ,N}
-astuple(d::DigitFT) = d.child
-
-
-immutable DLeaf{T,N} <: DigitFT{T,N}
+immutable DLeaf{T,N} <: DigitFT{T,N} # N in 1:4 by constructor restriction
     child::NTuple{N, T}
     len::Int
     depth::Int
-#    DLeaf() = new((),0,0)
     DLeaf(a) = new((a,), len(a), 0)
     function DLeaf(a::T,b::T) 
         new((a,b), len(a)+len(b), 0)
@@ -128,7 +122,7 @@ SingleFT{T}(a::Tree23{T}) = SingleFT{T}(a)
 
 immutable DeepFT{T} <: FingerTree{T}
     left::DigitFT{T}
-    succ::FingerTree{T}
+    succ::FingerTree{T} # is infact a FingerTree{Node{T}} 
     right::DigitFT{T}
     len::Int
     depth::Int
@@ -159,6 +153,7 @@ DeepFT{T}(l::DigitFT{T}, r::DigitFT{T}) = DeepFT{T}(l, EmptyFT{T}(), r)
 
 
 # to safe (a lot of) compilation time, the depth of the tree is tracked and not guaranteed by a type constraint
+
 dep(_) = 0
 dep(n::Tree23) = n.depth
 dep(d::DigitFT) = d.depth
@@ -166,18 +161,17 @@ dep(s::SingleFT) = dep(s.a)
 dep(_::EmptyFT) = 0
 dep(ft::DeepFT) = ft.depth
 
-
-
 eltype{T}(b::FingerTree{T}) = T
 eltype{T}(b::DigitFT{T}) = T
 
 
-# TODO: allow other counting functions
+# decoration with a predicate
+# TODO: allow other counting functions then len=length
+
 len(a) = 1
 len{N}(n::NTuple{N, Leaf23}) = mapreduce(len, +, n)::Int
 len(_::()) = 0
 len{N}(n::NTuple{N, Node23}) = mapreduce(len, +, n)::Int
-
 
 len(n::Tree23) = n.len
 len(digit::DigitFT) = digit.len
@@ -193,21 +187,7 @@ isempty(_::FingerTree) = false
 width{T,N}(digit::DigitFT{T,N}) = N::Int
 width(n::Tree23) = length(isnull(n.c) ? 3 : 2)
 
-function conjl(t) 
-    ft = t[end]
-    for i in length(t)-1:-1:1
-        ft = conjl(t[i], ft)
-    end
-    ft
-end
-function conjr(t) 
-    ft = t[1]
-    for x in t[2:end]
-        ft = conjr(ft, x)
-    end
-    ft
-end
-
+# constructor
 
 FingerTree{K}(::Type{K},ft::FingerTree{K}) = ft
 FingerTree{K}(::Type{K}, n::Tree23{K}) = fingertree(n)
@@ -220,8 +200,9 @@ function FingerTree(K,t)
 end
 FingerTree(a) = FingerTree(eltype(a), a)
 
+# short conversions
 
-fingertree(_::()) = error("Untyped empty FingerTree")
+fingertree(_::()) = error("Attempt to create untyped empty FingerTree")
 fingertree(a) = SingleFT(a)
 fingertree(a,b) = DeepFT(a, b)
 fingertree(a,b,c) = DeepFT(DigitFT(a,b), DigitFT(c))
@@ -231,15 +212,16 @@ fingertree(a,b,c,d,e,f) = DeepFT(DigitFT(a,b,c), DigitFT(d,e,f))
 fingertree(a,b,c,d,e,f,g) = DeepFT(DigitFT(a,b,c,d), DigitFT(e,f,g))
 fingertree(a,b,c,d,e,f,g,h) = DeepFT(DigitFT(a,b,c,d), DigitFT(e,f,g,h))
 
-tfingertree(T, xs...) = fingertree(xs...)
-tfingertree(T, x::()) = EmptyFT{T}()
-
 toftree(d::FingerTree) = d
 toftree{T}(d::DigitFT{T}) = fingertree(d.child...)
 toftree{T}(d::Tree23{T}) = fingertree(astuple(d)...)
-toftree{N,T}(d::NTuple{N,Tree23{T}}) = tfingertree(T, d...)
-toftree{T}(d::T) = tfingertree(d)
+toftree{T}(d::NTuple{1, T}) = fingertree(d[1])
+toftree{T}(d::NTuple{2, T}) = fingertree(d[1],d[2])
+toftree{T}(d::NTuple{3, T}) = fingertree(d...)
+toftree{T}(d::NTuple{4, T}) = fingertree(d...)
 
+astuple(n::Tree23) = isnull(n.c) ? (n.a, n.b) : (n.a, n.b, get(n.c))
+astuple(d::DigitFT) = d.child
 
 
 
@@ -578,16 +560,32 @@ end
 function done(ft::FingerTree, state)
     state[2].state==:done
 end
+
+function conjlall(t) 
+    ft = t[end]
+    for i in length(t)-1:-1:1
+        ft = conjl(t[i], ft)
+    end
+    ft
+end
+function conjrall(t) 
+    ft = t[1]
+    for x in t[2:end]
+        ft = conjr(ft, x)
+    end
+    ft
+end
  
+  
  
 app3(l::SingleFT, ts, r::SingleFT) = fingertree(l.a, ts..., r.a)
-app3(::EmptyFT, ts, r::EmptyFT) =     fingertree(ts...) # for example ts::NTuple{N,Tree23}, 
+app3(::EmptyFT, ts, r::EmptyFT) = fingertree(ts...) # for example ts::NTuple{N,Tree23}
 app3(::EmptyFT, ts, r::SingleFT) = fingertree(ts..., r.a)
 app3(l::SingleFT, ts, ::EmptyFT) = fingertree(l.a, ts...)
-app3(::EmptyFT, ts, r) = conjl(tuple(ts..., r))
+app3(::EmptyFT, ts, r) = conjlall(tuple(ts..., r)) # conjall can be avoided... TODO
 app3(l, ts, ::EmptyFT) = conjr(l, ts...)
-app3(x::SingleFT, ts, r) = conjl(x.a, conjl(tuple(ts..., r)))
-app3(l, ts, x::SingleFT) = conjr(conjr(tuple(l, ts...)), x.a)
+app3(x::SingleFT, ts, r) = conjl(x.a, conjlall(tuple(ts..., r)))
+app3(l, ts, x::SingleFT) = conjr(conjrall(tuple(l, ts...)), x.a)
 
 
 nodes(a,b) = (Tree23(a, b),)
@@ -601,15 +599,17 @@ concat(l::FingerTree, r::FingerTree) = app3(l, (), r)
 concat(l::FingerTree, x, r::FingerTree) = app3(l, (x,), r)
 
 
-
-
-
+#=
 Base.show(io::IO, d::DigitFT) = print(io, join(d.child, "|"), "|")
-#Base.show(io::IO, n::Tree23) = len(n) < 20 ? print(io, "^($(n.len))", n.a, "'", n.b, isnull(n.c) ? "" : "'", isnull(n.c) ? "" : get(n.c)) : print(" ... ")
 Base.show(io::IO, n::Tree23) = len(n) < 20 ? print(io, "^", n.a, "'", n.b, isnull(n.c) ? "" : "'", isnull(n.c) ? "" : get(n.c)) : print(" ... ")
 Base.show(io::IO, d::DeepFT) = print(io, "{", d.left, " . ", d.succ, " . ", d.right, "}")
 Base.show(io::IO, d::SingleFT) = print(io, "<", d.a, ">")
 Base.show(io::IO, d::EmptyFT) = print(io, "{}")
-
+=#
+Base.show(io::IO, d::DigitFT) = print(io, join(d.child, " "))
+Base.show(io::IO, n::Tree23) = len(n) < 20 ? print(io, n.a, " ", n.b, isnull(n.c) ? "" : " ", isnull(n.c) ? "" : get(n.c)) : print(" ... ")
+Base.show(io::IO, d::DeepFT) = print(io, dep(d) == 0 ? "FingerTree[": "", d.left, " ", d.succ, " ", d.right, dep(d) == 0 ? "]": "")
+Base.show(io::IO, d::SingleFT) = print(io, dep(d) == 0 ? "FingerTree[": "", d.a, dep(d) == 0 ? "]": "")
+Base.show(io::IO, d::EmptyFT) = print(io, dep(d) == 0 ? "EmptyFT[]": "")
 
 end
