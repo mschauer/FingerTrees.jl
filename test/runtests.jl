@@ -90,7 +90,7 @@ verb &&     println(k, " ",i, ft)
 end
 
 
-torture(3); torture(10); torture(200);
-@time for i in 1:10; torture(3); torture(10); torture(200); end
+torture(3); torture(10); torture(100);
+@time for i in 1:10; torture(3); torture(10); torture(100); end
 println("done")
-ft = FingerTrees.concat(randomft(10), randomft(10,11))
+ft = FingerTrees.concat(randomft(10), randomft(10,11));

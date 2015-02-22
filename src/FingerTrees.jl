@@ -169,9 +169,9 @@ eltype{T}(b::DigitFT{T}) = T
 
 # TODO: allow other counting functions
 len(a) = 1
-len{K, S}(n::NTuple{K, S}) = K::Int
+len{N}(n::NTuple{N, Leaf23}) = N
 len(_::()) = 0
-len{K}(n::NTuple{K, Tree23}) = mapreduce(len, +, n)::INt
+len{N}(n::NTuple{N, Node23}) = mapreduce(len, +, n)::Int
 
 
 len(n::Tree23) = n.len
@@ -236,17 +236,17 @@ conjr{T}(digit::DigitFT3{T}, a) = DigitFT(digit.child..., a)
 
 splitl{T}(digit::DLeaf{T,1}) = digit.child[1], DLeaf{T,0}()
 splitl{T}(digit::DNode{T,1}) = digit.child[1], DNode{T,0}()
-splitl{T}(digit::DigitFT2{T}) = digit.child[1], DigitFT(digit.child[2]...)
+splitl{T}(digit::DigitFT2{T}) = digit.child[1], DigitFT(digit.child[2])
 splitl{T}(digit::DigitFT3{T}) = digit.child[1], DigitFT(digit.child[2:end]...)
 splitl{T}(digit::DigitFT4{T}) = digit.child[1], DigitFT(digit.child[2:end]...)
 
 splitr{T}(digit::DLeaf{T,1}) = DLeaf{T,0}(), digit.child[end]
 splitr{T}(digit::DNode{T,1}) = DNode{T,0}(), digit.child[end]
-splitr{T}(digit::DigitFT2{T}) = DigitFT(digit.child[1]...), digit.child[end]
+splitr{T}(digit::DigitFT2{T}) = DigitFT(digit.child[1]), digit.child[end]
 splitr{T}(digit::DigitFT3{T}) = DigitFT(digit.child[1:end-1]...), digit.child[end]
 splitr{T}(digit::DigitFT4{T}) = DigitFT(digit.child[1:end-1]...), digit.child[end]
 
-function Base.getindex(d::DigitFT, i)
+function Base.getindex(d::DigitFT, i::Int)
     for k in 1:width(d)
         j = len(d.child[k]) 
         if i <= j return getindex(d.child[k], i) end
@@ -254,7 +254,7 @@ function Base.getindex(d::DigitFT, i)
     end
     throw(BoundsError())
 end
-function Base.getindex(n::Tree23, i)
+function Base.getindex(n::Tree23, i::Int)
     j = len(n.a)
     i <= j && return getindex(n.a, i)
     i -= j; j = len(n.b)
@@ -300,7 +300,7 @@ end
 function splitr{K}(single::SingleFT{K})
      EmptyFT{K}(), single.a
 end
-function conjl{T}(a::T, ft::DeepFT{T})
+function conjl{T}(a, ft::DeepFT{T})
     if width(ft.left) < 4
         DeepFT(conjl(a,ft.left), ft.succ, ft.right)
     else
@@ -408,6 +408,7 @@ function rotr{K}(d, ft::FingerTree{K})
     ft, x = splitr(ft)
     y = isa(x, Tree23) ? astuple(x) : (x,)
     if isa(ft, SingleFT) && !isa(ft.a, Tree23) return fingertree(d.child..., ft.a, y...) end
+#    if isa(ft, SingleFT) return fingertree(d.child..., ft.a, y...) end
     DeepFT{K}(DigitFT(d.child...), ft, DigitFT(y...))
 end
 rotl(ft::EmptyFT, d) = fingertree(d.child...)
@@ -415,6 +416,7 @@ function rotl{K}(ft::FingerTree{K},d)
     x, ft = splitl(ft)
     y = isa(x, Tree23) ? astuple(x) : (x,) 
     if isa(ft, SingleFT) && !isa(ft.a, Tree23) return fingertree(y..., ft.a, d.child...) end
+#    if isa(ft, SingleFT) return fingertree(y..., ft.a, d.child...) end
     DeepFT{K}(DigitFT(y...), ft, DigitFT(d.child...))
 end
 
