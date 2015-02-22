@@ -17,7 +17,7 @@ function updown(E)
     end
 end
 ft = updown('E')
-ft = updown('Z')
+#ft = updown('Z')
 
 
 function randomft(N, start = 1, verb = false)
@@ -78,6 +78,7 @@ verb &&     println(k, " ",i, ft)
     end 
     
     i = rand(1:N)
+    println("split $N at $i")
     a, j, b = FingerTrees.split(randomft(N), i)
     for k in 1:i-1
         @test a[k] == k
