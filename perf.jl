@@ -17,12 +17,12 @@ function fctest(N, n, verbose=true)
     @time for i in 2:n
         x = append(x, n+i)
     end
-    x = assoc(x, 1, n)
-    x = assoc(x, n, 1)
-    verbose && println("assoc")
+    x = FC.assoc(x, 1, n)
+    x = FC.assoc(x, n, 1)
+    verbose && println("FC.assoc")
     @time for i in 1:N
-        x = assoc(x, n-i, n+i)
-        x = assoc(x, n+i, n-i)
+        x = FC.assoc(x, n-i, n+i)
+        x = FC.assoc(x, n+i, n-i)
     end
     verbose && println("getindex")
     y = 0
