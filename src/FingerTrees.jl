@@ -170,7 +170,7 @@ eltype{T}(b::DigitFT{T}) = T
 
 len(a) = 1
 len{N}(n::NTuple{N, Leaf23}) = mapreduce(len, +, n)::Int
-len(_::()) = 0
+len(_::Tuple{}) = 0
 len{N}(n::NTuple{N, Node23}) = mapreduce(len, +, n)::Int
 
 len(n::Tree23) = n.len
@@ -202,7 +202,7 @@ FingerTree(a) = FingerTree(eltype(a), a)
 
 # short conversions
 
-fingertree(_::()) = error("Attempt to create untyped empty FingerTree")
+fingertree(_::Tuple{}) = error("Attempt to create untyped empty FingerTree")
 fingertree(a) = SingleFT(a)
 fingertree(a,b) = DeepFT(a, b)
 fingertree(a,b,c) = DeepFT(DigitFT(a,b), DigitFT(c))
@@ -400,8 +400,8 @@ function collect(xs::FingerTree)
 end
 
 typealias NonEmptyFT{T} Union(SingleFT{T},DeepFT{T})
-deepl{T}(t::(), ft::EmptyFT{T}, dr::DigitFT) = toftree(dr)
-deepl{T}(t::(), ft::NonEmptyFT{T}, dr::DigitFT) = begin
+deepl{T}(t::Tuple{}, ft::EmptyFT{T}, dr::DigitFT) = toftree(dr)
+deepl{T}(t::Tuple{}, ft::NonEmptyFT{T}, dr::DigitFT) = begin
     if isempty(ft) 
         return toftree(dr)
     end
@@ -414,8 +414,8 @@ deepl{T}(d::DigitFT, ft::DeepFT{T}, dr::DigitFT) = DeepFT{T}(d, ft, dr)
 deepl{T}(t, ft::NonEmptyFT{T}, dr::DigitFT) = DeepFT{T}(DigitFT(t...), ft, dr)
 deepl{T}(t, ft::EmptyFT{T}, dr::DigitFT) = DeepFT{T}(digit(t), ft, dr)
 
-deepr{T}(d::DigitFT, ft::EmptyFT{T}, t::()) = toftree(d)
-deepr{T}(d::DigitFT, ft::NonEmptyFT{T}, t::()) = begin
+deepr{T}(d::DigitFT, ft::EmptyFT{T}, t::Tuple{}) = toftree(d)
+deepr{T}(d::DigitFT, ft::NonEmptyFT{T}, t::Tuple{}) = begin
     if isempty(ft) 
         return toftree(d)
     end
