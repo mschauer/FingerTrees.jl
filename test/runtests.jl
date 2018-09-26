@@ -1,4 +1,5 @@
 include(joinpath("../src/FingerTrees.jl"))
+
 if VERSION < v"0.7"
     using Base.Test
 else
