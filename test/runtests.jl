@@ -71,12 +71,12 @@ verb &&     println(k, " ",i, ft)
     n = N
     ft = FingerTrees.concat(randomft(n), randomft(n,n+1))
     FingerTrees.traverse((x,l)->@test(isa(x, Int)), ft)
-    j = 1
+#=    j = 1
     for i in ft
         @test j==i
         j += 1
     end
-
+=#
     i = rand(1:N)
     println("split $N at $i")
     a, j, b = FingerTrees.split(randomft(N), i)
@@ -92,6 +92,6 @@ end
 
 
 torture(3); torture(10); torture(100);
-@time for i in 1:1000; torture(3); torture(10); torture(100); end
+@time for i in 1:100; torture(3); torture(10); torture(100); end
 println("done")
 ft = FingerTrees.concat(randomft(10), randomft(10,11));
