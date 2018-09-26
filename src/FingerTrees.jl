@@ -608,8 +608,8 @@ Base.show(io::IO, d::EmptyFT) = print(io, "{}")
 =#
 Base.show(io::IO, d::DigitFT) = print(io, join(d.child, " "))
 Base.show(io::IO, n::Tree23) = len(n) < 20 ? print(io, n.a, " ", n.b, isnull(n.c) ? "" : " ", isnull(n.c) ? "" : get(n.c)) : print(" ... ")
-Base.show(io::IO, d::DeepFT) = print(io, dep(d) == 0 ? "FingerTree[": "", d.left, " ", d.succ, " ", d.right, dep(d) == 0 ? "]": "")
-Base.show(io::IO, d::SingleFT) = print(io, dep(d) == 0 ? "FingerTree[": "", d.a, dep(d) == 0 ? "]": "")
-Base.show(io::IO, d::EmptyFT) = print(io, dep(d) == 0 ? "EmptyFT[]": "")
+Base.show(io::IO, d::DeepFT) = print(io, dep(d) == 0 ? "FingerTree[" : "", d.left, " ", d.succ, " ", d.right, dep(d) == 0 ? "]" : "")
+Base.show(io::IO, d::SingleFT) = print(io, dep(d) == 0 ? "FingerTree[" : "", d.a, dep(d) == 0 ? "]" : "")
+Base.show(io::IO, d::EmptyFT) = print(io, dep(d) == 0 ? "EmptyFT[]" : "")
 
 end
