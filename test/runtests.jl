@@ -27,10 +27,10 @@ function randomft(N, start = 1, verb = false)
     u = l+1
     i = 1
     for i in 1:N
-        if b[i] 
+        if b[i]
             ft = FingerTrees.conjl(l, ft)
             l -= 1
-        else 
+        else
             ft = FingerTrees.conjr(ft,u)
             u += 1
         end
@@ -44,14 +44,14 @@ randomft(12, true)
 
 function torture(N, verb=false)
     ft = randomft(N, 1, verb)
-    
-    
+
+
     # checks integrity
     for i in 1:N
         @test ft[i] == i
     end
-    
-    
+
+
     b = bitrand(N)
     l = 1
     u = N
@@ -64,7 +64,7 @@ function torture(N, verb=false)
             ft, k = FingerTrees.splitr(ft)
             @test k == u
             u -= 1
-        end        
+        end
 verb &&     println(k, " ",i, ft)
     end
     assert(FingerTrees.isempty(ft))
@@ -75,8 +75,8 @@ verb &&     println(k, " ",i, ft)
     for i in ft
         @test j==i
         j += 1
-    end 
-    
+    end
+
     i = rand(1:N)
     println("split $N at $i")
     a, j, b = FingerTrees.split(randomft(N), i)
@@ -87,7 +87,7 @@ verb &&     println(k, " ",i, ft)
     for k in i+1:N
         @test b[k-i] == k
     end
-    
+
 end
 
 
