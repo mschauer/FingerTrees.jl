@@ -1,5 +1,5 @@
 include(joinpath("../src/FingerTrees.jl"))
-using Base.Test
+using Test
 using FingerTrees
 if !isdefined(:FT)
     const FT = FingerTrees
