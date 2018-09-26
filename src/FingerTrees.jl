@@ -1,6 +1,6 @@
 module FingerTrees
 using Nullables
-import Base: reduce, start, next, done, length, collect, split, eltype, isempty
+import Base: reduce, length, collect, split, eltype, isempty
 
 export FingerTree, conjl, conjr, splitl, splitr, len, fingertree, flat, split, travstruct, traverse, concat, <|, |>, assoc
 export EmptyFT
