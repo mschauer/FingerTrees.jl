@@ -1,4 +1,5 @@
 module FingerTrees
+using Nullables
 import Base: reduce, start, next, done, length, collect, split, eltype, isempty
 
 export FingerTree, conjl, conjr, splitl, splitr, len, fingertree, flat, split, travstruct, traverse, concat, <|, |>, assoc
@@ -9,9 +10,8 @@ export EmptyFT
 ..(a,b) = concat(a,b)
 
 abstract type FingerTree{T}  # T is the element type, can also represent a higher order tree of actual type FingerTree{Tree23{T}}
-end # T is the element type, can also represent a higher order tree of actual type FingerTree{Tree23{T}}
+end
 abstract type Tree23{T}
-
 end
 
 struct Leaf23{T} <: Tree23{T}
@@ -20,13 +20,13 @@ struct Leaf23{T} <: Tree23{T}
     c::Nullable{T}
     len::Int
     depth::Int
-    function Leaf23(a, b)
+    function Leaf23(a::T, b::T) where {T}
         if !(dep(a)==dep(b)) error("Try to construct uneven Leaf2") end
-        new(a, b, Nullable{T}(), len(a)+len(b), dep(a)+1)
+        new{T}(a, b, Nullable{T}(), len(a)+len(b), dep(a)+1)
     end
-    function Leaf23(a, b, c)
+    function Leaf23(a::T, b::T, c::T) where {T}
         if !(dep(a)==dep(b)==dep(c)) error("Try to construct uneven Leaf3") end
-        new(a,b,c, len(a)+len(b)+len(c), dep(a)+1)
+        new{T}(a,b,c, len(a)+len(b)+len(c), dep(a)+1)
     end
 end
 
@@ -36,20 +36,20 @@ struct Node23{T} <: Tree23{T}
     c::Nullable{Tree23{T}}
     len::Int
     depth::Int
-    function Node23(a, b)
+    function Node23(a::Tree23{T}, b::Tree23{T}) where {T}
         if !(dep(a)==dep(b)) error("Try to construct uneven Node2") end
-        new(a, b, Nullable{Tree23}(), len(a)+len(b), dep(a)+1)
+        new{T}(a, b, Nullable{Tree23}(), len(a)+len(b), dep(a)+1)
     end
-    function Node23(a, b, c)
+    function Node23(a::Tree23{T}, b::Tree23{T}, c::Tree23{T}) where {T}
         if !(dep(a)==dep(b)==dep(c)) error("Try to construct uneven Node3") end
-        new(a,b,c, len(a)+len(b)+len(c), dep(a)+1)
+        new{T}(a,b,c, len(a)+len(b)+len(c), dep(a)+1)
     end
 end
 
-Tree23(a::T,b::T,c::T) where {T} = Leaf23{T}(a,b,c)
-Tree23(a::T,b::T) where {T} = Leaf23{T}(a,b)
-Tree23(a::Tree23{T},b::Tree23{T},c::Tree23{T}) where {T} = Node23{T}(a,b,c)
-Tree23(a::Tree23{T},b::Tree23{T}) where {T} = Node23{T}(a,b)
+Tree23(a,b,c) = Leaf23(a,b,c)
+Tree23(a,b) = Leaf23(a,b)
+Tree23(a::Tree23{T},b::Tree23{T},c::Tree23{T}) where {T} = Node23(a,b,c)
+Tree23(a::Tree23{T},b::Tree23{T}) where {T} = Node23(a,b)
 
 abstract type DigitFT{T,N}
 
@@ -59,15 +59,15 @@ struct DLeaf{T,N} <: DigitFT{T,N} # N in 1:4 by constructor restriction
     child::NTuple{N, T}
     len::Int
     depth::Int
-    DLeaf(a) = new((a,), len(a), 0)
-    function DLeaf(a::T,b::T)
-        new((a,b), len(a)+len(b), 0)
+    DLeaf(a::T) where {T} = new{T,1}((a,), len(a), 0)
+    function DLeaf(a::T,b::T) where {T}
+        new{T,2}((a,b), len(a)+len(b), 0)
     end
-    function DLeaf(a::T,b::T,c::T)
-        new((a,b,c), len(a)+len(b)+len(c), 0)
+    function DLeaf(a::T,b::T,c::T) where {T}
+        new{T,3}((a,b,c), len(a)+len(b)+len(c), 0)
     end
-    function DLeaf(a::T,b::T,c::T,d::T)
-        new((a,b,c,d), +(len(a),len(b),len(c),len(d)), 0)
+    function DLeaf(a::T,b::T,c::T,d::T) where {T}
+        new{T,4}((a,b,c,d), +(len(a),len(b),len(c),len(d)), 0)
     end
 end
 
@@ -76,18 +76,18 @@ struct DNode{T,N} <: DigitFT{T,N}
     child::NTuple{N, Tree23{T}}
     len::Int
     depth::Int
-    DNode(a) = new((a,), len(a), dep(a))
-    function DNode(a,b)
+    DNode(a::Tree23{T}) where {T} = new{T,1}((a,), len(a), dep(a))
+    function DNode(a::Tree23{T},b::Tree23{T}) where {T}
         if dep(a)!=dep(b) error("Try to construct uneven digit $b") end
-        new((a,b), len(a)+len(b), dep(a))
+        new{T,2}((a,b), len(a)+len(b), dep(a))
     end
-    function DNode(a,b,c)
+    function DNode(a::Tree23{T},b::Tree23{T},c::Tree23{T}) where {T}
         if !(dep(a)==dep(b)==dep(c)) error("Try to construct uneven digit $b ") end
-        new((a,b,c), len(a)+len(b)+len(c), dep(a))
+        new{T,3}((a,b,c), len(a)+len(b)+len(c), dep(a))
     end
-    function DNode(a,b,c,d)
+    function DNode(a::Tree23{T},b::Tree23{T},c::Tree23{T},d::Tree23{T}) where {T}
         if !(dep(a)==dep(b)==dep(c)==dep(d)) error("Try to construct uneven digit $b") end
-        new((a,b,c,d), +(len(a),len(b),len(c),len(d)), dep(a))
+        new{T,4}((a,b,c,d), +(len(a),len(b),len(c),len(d)), dep(a))
     end
 end
 
@@ -96,14 +96,14 @@ DigitFT2{T} = DigitFT{T,2}
 DigitFT3{T} = DigitFT{T,3}
 DigitFT4{T} = DigitFT{T,4}
 
-DigitFT(a::T) where {T} = DLeaf{T,1}(a)
-DigitFT(a::T,b::T) where {T} = DLeaf{T,2}(a,b)
-DigitFT(a::T,b::T,c::T) where {T} = DLeaf{T,3}(a,b,c)
-DigitFT(a::T,b::T,c::T,d::T) where {T} = DLeaf{T,4}(a,b,c,d)
-DigitFT(a::Tree23{T}) where {T} = DNode{T,1}(a)
-DigitFT(a::Tree23{T},b::Tree23{T}) where {T} = DNode{T,2}(a,b)
-DigitFT(a::Tree23{T},b::Tree23{T},c::Tree23{T}) where {T} = DNode{T,3}(a,b,c)
-DigitFT(a::Tree23{T},b::Tree23{T},c::Tree23{T},d::Tree23{T}) where {T} = DNode{T,4}(a,b,c,d)
+DigitFT(a) = DLeaf(a)
+DigitFT(a,b) = DLeaf(a,b)
+DigitFT(a,b,c) = DLeaf(a,b,c)
+DigitFT(a,b,c,d)  = DLeaf(a,b,c,d)
+DigitFT(a::Tree23{T}) where {T} = DNode(a)
+DigitFT(a::Tree23{T},b::Tree23{T}) where {T} = DNode(a,b)
+DigitFT(a::Tree23{T},b::Tree23{T},c::Tree23{T}) where {T} = DNode(a,b,c)
+DigitFT(a::Tree23{T},b::Tree23{T},c::Tree23{T},d::Tree23{T}) where {T} = DNode(a,b,c,d)
 
 function digit(n::Tree23{T}) where T
     if isnull(n.c)
@@ -120,9 +120,9 @@ end
 
 struct SingleFT{T} <: FingerTree{T}
     a::Union{T, Tree23{T}}
+    SingleFT(a::T) where {T} = new{T}(a)
+    SingleFT(a::Tree23{T}) where {T} = new{T}(a)
 end
-SingleFT(a::T) where {T} = SingleFT{T}(a)
-SingleFT(a::Tree23{T}) where {T} = SingleFT{T}(a)
 
 
 struct DeepFT{T} <: FingerTree{T}
@@ -131,14 +131,14 @@ struct DeepFT{T} <: FingerTree{T}
     right::DigitFT{T}
     len::Int
     depth::Int
-    function DeepFT(l::DigitFT{T}, s::FingerTree{T} , r::DigitFT{T})
+    function DeepFT(l::DigitFT{T,N}, s::FingerTree{T}, r::DigitFT{T,M}) where {T,N,M}
         if !(dep(l) == dep(s) - 1 == dep(r) || (isempty(s) && dep(l) == dep(r)))
             dump(l); dump(s);dump(r)
             error("Attempt to construct uneven finger tree")
         end
-        new(l, s, r, len(l) + len(s) + len(r), dep(l))
+        new{T}(l, s, r, len(l) + len(s) + len(r), dep(l))
     end
-    function DeepFT(ll, s::FingerTree{T} , rr)
+#=    function DeepFT(ll, s::FingerTree{T}, rr) where {T}
         l = DigitFT(ll)
         r = DigitFT(rr)
 
@@ -146,15 +146,20 @@ struct DeepFT{T} <: FingerTree{T}
             dump(l); dump(s);dump(r)
             error("Attempt to construct uneven finger tree")
         end
-        new(l, s, r, len(l) + len(s) + len(r), dep(l))
-    end
+        new{T}(l, s, r, len(l) + len(s) + len(r), dep(l))
+    end=#
 end
+#=
 DeepFT(l::DigitFT{T}, s::FingerTree{T} , r::DigitFT{T}) where {T} = DeepFT{T}(l, s, r)
-DeepFT(l::Tree23{T}, s::FingerTree{T}, r::Tree23{T}) where {T} = DeepFT{T}(l, s, r)
-DeepFT(l::T, s::FingerTree{T}, r::T) where {T} = DeepFT{T}(l, s, r)
-DeepFT(l::T, r::T) where {T} = DeepFT{T}(DigitFT(l), EmptyFT{T}(), DigitFT(r))
-DeepFT(l::Tree23{T}, r::Tree23{T}) where {T} = DeepFT{T}(DigitFT(l), EmptyFT{T}(), DigitFT(r))
-DeepFT(l::DigitFT{T}, r::DigitFT{T}) where {T} = DeepFT{T}(l, EmptyFT{T}(), r)
+=#
+DeepFT(l::T, s::FingerTree{T}, r::T) where {T} = DeepFT(digit(l), s, digit(r))
+#DeepFT(l::Leaf23{T}, s::FingerTree{T}, r::Leaf23{T}) where {T} = DeepFT(l, s, r)
+DeepFT(l::Tree23{T}, s::FingerTree{T}, r::Tree23{T}) where {T} = DeepFT(DigitFT(l), s, DigitFT(r))
+#DeepFT(l::DigitFT, s::FingerTree{T}, r::DigitFT) where {T} = DeepFT(DigitFT(l), s, DigitFT(r))
+
+DeepFT(l::T, r::T) where {T} = DeepFT(DigitFT(l), EmptyFT{T}(), DigitFT(r))
+DeepFT(l::Tree23{T}, r::Tree23{T}) where {T} = DeepFT(DigitFT(l), EmptyFT{T}(), DigitFT(r))
+DeepFT(l::DigitFT{T}, r::DigitFT{T}) where {T} = DeepFT(l, EmptyFT{T}(), r)
 
 
 # to safe (a lot of) compilation time, the depth of the tree is tracked and not guaranteed by a type constraint
@@ -413,11 +418,11 @@ deepl(t::Tuple{}, ft::NonEmptyFT{T}, dr::DigitFT) where {T} = begin
     x, ft2 = splitl(ft)
     x = digit(x)
 #    isa(ft2, SingleFT{T}) && isa(ft2.a, T) && return fingertree(x.child..., ft2.a, dr.child...)
-    DeepFT{T}(x, ft2, dr)
+    DeepFT(x, ft2, dr)
 end
-deepl(d::DigitFT, ft::DeepFT{T}, dr::DigitFT) where {T} = DeepFT{T}(d, ft, dr)
-deepl(t, ft::NonEmptyFT{T}, dr::DigitFT) where {T} = DeepFT{T}(DigitFT(t...), ft, dr)
-deepl(t, ft::EmptyFT{T}, dr::DigitFT) where {T} = DeepFT{T}(digit(t), ft, dr)
+deepl(d::DigitFT, ft::DeepFT{T}, dr::DigitFT) where {T} = DeepFT(d, ft, dr)
+deepl(t, ft::NonEmptyFT{T}, dr::DigitFT) where {T} = DeepFT(DigitFT(t...), ft, dr)
+deepl(t, ft::EmptyFT{T}, dr::DigitFT) where {T} = DeepFT(digit(t), ft, dr)
 
 deepr(d::DigitFT, ft::EmptyFT{T}, t::Tuple{}) where {T} = toftree(d)
 deepr(d::DigitFT, ft::NonEmptyFT{T}, t::Tuple{}) where {T} = begin
@@ -427,11 +432,11 @@ deepr(d::DigitFT, ft::NonEmptyFT{T}, t::Tuple{}) where {T} = begin
     ft2, x = splitr(ft)
     x = digit(x)
 #    isa(ft2, SingleFT{T}) && isa(ft2.a, T) && return fingertree(d.child..., ft2.a, x.child...)
-    DeepFT{T}(d, ft2, x)
+    DeepFT(d, ft2, x)
 end
-deepr(d::DigitFT, ft::DeepFT{T}, dr::DigitFT) where {T} = DeepFT{T}(d, ft, dr)
-deepr(d::DigitFT, ft::NonEmptyFT{T}, t) where {T} = DeepFT{T}(d, ft, DigitFT(t...))
-deepr(d::DigitFT, ft::EmptyFT{T}, t) where {T} = DeepFT{T}(d, ft, DigitFT(t...))
+deepr(d::DigitFT, ft::DeepFT{T}, dr::DigitFT) where {T} = DeepFT(d, ft, dr)
+deepr(d::DigitFT, ft::NonEmptyFT{T}, t) where {T} = DeepFT(d, ft, DigitFT(t...))
+deepr(d::DigitFT, ft::EmptyFT{T}, t) where {T} = DeepFT(d, ft, DigitFT(t...))
 
 function split(ft::EmptyFT, i)
     error("can't split empty FingerTree")
@@ -534,13 +539,13 @@ travstruct(op::Function, ft::SingleFT, d) = travstruct(op, ft.a, d)
 function travstruct(op::Function,n::DigitFT{T}, d) where T
     d2 = travstruct(op, n.child[1], d)
     for k in 2:width(n)
-        assert(d2 == travstruct(op, n.child[k], d ))
+        @assert(d2 == travstruct(op, n.child[k], d ))
     end
     d2
 end
 function travstruct(op::Function, ft::DeepFT, d)
     d2 = travstruct(op, ft.left, d)
-    assert(d2 == travstruct(op, ft.succ, d + 1) - 1 ==  travstruct(op, ft.right, d))
+    @assert(d2 == travstruct(op, ft.succ, d + 1) - 1 ==  travstruct(op, ft.right, d))
     d2
 end
 travstruct(op, ft) = travstruct(op, ft, 1)

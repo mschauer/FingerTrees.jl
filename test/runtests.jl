@@ -1,10 +1,9 @@
 include(joinpath("../src/FingerTrees.jl"))
-using Base.Test
-using FingerTrees
-if !isdefined(:FT)
-    const FT = FingerTrees
+if VERSION < v"0.7"
+    using Base.Test
+else
+    using Test, Random
 end
-
 function updown(E)
     ft = FingerTrees.EmptyFT{Char}()
     for i in 'A':E
@@ -67,7 +66,7 @@ function torture(N, verb=false)
         end
 verb &&     println(k, " ",i, ft)
     end
-    assert(FingerTrees.isempty(ft))
+    @assert(FingerTrees.isempty(ft))
     n = N
     ft = FingerTrees.concat(randomft(n), randomft(n,n+1))
     FingerTrees.traverse((x,l)->@test(isa(x, Int)), ft)
