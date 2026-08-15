@@ -408,48 +408,55 @@ end
 # ---------------------------------------------------------------------------
 
 const DigitFragment{T} = Union{Nothing,DigitFTRep{T}}
+const SplitValue{T} = Union{T,Tree23Rep{T}}
+
+struct DigitSplit{T}
+    left::DigitFragment{T}
+    value::SplitValue{T}
+    right::DigitFragment{T}
+end
+
 # A split fragment has at most three children.  Represent nonempty fragments
-# immediately as digits rather than as variable-length tuples, so the split
-# machinery stays within the closed finite representation.
+# immediately as digits and package the result in one concrete return type.
 function split(d::DigitFT{T,1}, i) where {T}
     a = d.child[1]
-    i <= len(a) && return nothing, a, nothing
+    i <= len(a) && return DigitSplit{T}(nothing, a, nothing)
     throw(BoundsError())
 end
 
 function split(d::DigitFT{T,2}, i) where {T}
     a, b = d.child
     j = len(a)
-    i <= j && return nothing, a, DigitFT(b)
+    i <= j && return DigitSplit{T}(nothing, a, DigitFT(b))
     i -= j
-    i <= len(b) && return DigitFT(a), b, nothing
+    i <= len(b) && return DigitSplit{T}(DigitFT(a), b, nothing)
     throw(BoundsError())
 end
 
 function split(d::DigitFT{T,3}, i) where {T}
     a, b, c = d.child
     j = len(a)
-    i <= j && return nothing, a, DigitFT(b, c)
+    i <= j && return DigitSplit{T}(nothing, a, DigitFT(b, c))
     i -= j
     j = len(b)
-    i <= j && return DigitFT(a), b, DigitFT(c)
+    i <= j && return DigitSplit{T}(DigitFT(a), b, DigitFT(c))
     i -= j
-    i <= len(c) && return DigitFT(a, b), c, nothing
+    i <= len(c) && return DigitSplit{T}(DigitFT(a, b), c, nothing)
     throw(BoundsError())
 end
 
 function split(d::DigitFT{T,4}, i) where {T}
     a, b, c, e = d.child
     j = len(a)
-    i <= j && return nothing, a, DigitFT(b, c, e)
+    i <= j && return DigitSplit{T}(nothing, a, DigitFT(b, c, e))
     i -= j
     j = len(b)
-    i <= j && return DigitFT(a), b, DigitFT(c, e)
+    i <= j && return DigitSplit{T}(DigitFT(a), b, DigitFT(c, e))
     i -= j
     j = len(c)
-    i <= j && return DigitFT(a, b), c, DigitFT(e)
+    i <= j && return DigitSplit{T}(DigitFT(a, b), c, DigitFT(e))
     i -= j
-    i <= len(e) && return DigitFT(a, b, c), e, nothing
+    i <= len(e) && return DigitSplit{T}(DigitFT(a, b, c), e, nothing)
     throw(BoundsError())
 end
 
@@ -528,9 +535,9 @@ function split(ft::DeepFT{T}, i) where {T}
     1 <= i <= length(ft) || throw(BoundsError(ft, i))
     j = len(ft.left)
     if i <= j
-        l, x, r = split(ft.left, i)
-        left = isnothing(l) ? EmptyFT{T}() : toftree(something(l))
-        return left, x, deepl(r, ft.succ, ft.right)
+        s = split(ft.left, i)
+        left = isnothing(s.left) ? EmptyFT{T}() : toftree(something(s.left))
+        return left, s.value, deepl(s.right, ft.succ, ft.right)
     end
     i -= j
     j = len(ft.succ)
@@ -543,9 +550,9 @@ function split(ft::DeepFT{T}, i) where {T}
     i -= j
     j = len(ft.right)
     if i <= j
-        l, x, r = split(ft.right, i)
-        right = isnothing(r) ? EmptyFT{T}() : toftree(something(r))
-        return deepr(ft.left, ft.succ, l), x, right
+        s = split(ft.right, i)
+        right = isnothing(s.right) ? EmptyFT{T}() : toftree(something(s.right))
+        return deepr(ft.left, ft.succ, s.left), s.value, right
     end
     throw(BoundsError())
 end
