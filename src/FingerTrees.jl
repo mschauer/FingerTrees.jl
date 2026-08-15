@@ -30,9 +30,9 @@ struct Leaf23{T} <: Tree23{T}
 end
 
 struct Node23{T} <: Tree23{T}
-    a::Tree23{T}
-    b::Tree23{T}
-    c::Union{Nothing,Tree23{T}}
+    a::Union{Leaf23{T},Node23{T}}
+    b::Union{Leaf23{T},Node23{T}}
+    c::Union{Nothing,Leaf23{T},Node23{T}}
     len::Int
     depth::Int
     function Node23(a::Tree23{T}, b::Tree23{T}) where {T}
@@ -44,6 +44,8 @@ struct Node23{T} <: Tree23{T}
         new{T}(a,b,c, len(a)+len(b)+len(c), dep(a)+1)
     end
 end
+
+const Tree23Rep{T} = Union{Leaf23{T},Node23{T}}
 
 Tree23(a,b,c) = Leaf23(a,b,c)
 Tree23(a,b) = Leaf23(a,b)
@@ -72,7 +74,7 @@ end
 
 
 struct DNode{T,N} <: DigitFT{T,N}
-    child::NTuple{N, Tree23{T}}
+    child::NTuple{N, Tree23Rep{T}}
     len::Int
     depth::Int
     DNode(a::Tree23{T}) where {T} = new{T,1}((a,), len(a), dep(a))
