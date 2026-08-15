@@ -403,40 +403,71 @@ function splitr(ft::DeepFT)
     end
 end
 
-function splitv(t, i)
-    t[1:i-1], t[i], t[i+1:end]
-end
-
 # ---------------------------------------------------------------------------
 # Splitting and persistent update
 # ---------------------------------------------------------------------------
 
-function split(d::DigitFT, i)
-    for k in 1:width(d)
-        j = len(d.child[k])
-        if i <= j
-            return splitv(d.child, k)
-        end
-        i -= j
-    end
+const DigitFragment{T} = Union{Nothing,DigitFTRep{T}}
+# A split fragment has at most three children.  Represent nonempty fragments
+# immediately as digits rather than as variable-length tuples, so the split
+# machinery stays within the closed finite representation.
+function split(d::DigitFT{T,1}, i) where {T}
+    a = d.child[1]
+    i <= len(a) && return nothing, a, nothing
     throw(BoundsError())
 end
+
+function split(d::DigitFT{T,2}, i) where {T}
+    a, b = d.child
+    j = len(a)
+    i <= j && return nothing, a, DigitFT(b)
+    i -= j
+    i <= len(b) && return DigitFT(a), b, nothing
+    throw(BoundsError())
+end
+
+function split(d::DigitFT{T,3}, i) where {T}
+    a, b, c = d.child
+    j = len(a)
+    i <= j && return nothing, a, DigitFT(b, c)
+    i -= j
+    j = len(b)
+    i <= j && return DigitFT(a), b, DigitFT(c)
+    i -= j
+    i <= len(c) && return DigitFT(a, b), c, nothing
+    throw(BoundsError())
+end
+
+function split(d::DigitFT{T,4}, i) where {T}
+    a, b, c, e = d.child
+    j = len(a)
+    i <= j && return nothing, a, DigitFT(b, c, e)
+    i -= j
+    j = len(b)
+    i <= j && return DigitFT(a), b, DigitFT(c, e)
+    i -= j
+    j = len(c)
+    i <= j && return DigitFT(a, b), c, DigitFT(e)
+    i -= j
+    i <= len(e) && return DigitFT(a, b, c), e, nothing
+    throw(BoundsError())
+end
+
 function split(n::Leaf23, i)
     if isnothing(n.c)
         j = len(n.a)
-        i <= j && return (), n.a, (n.b,)
+        i <= j && return nothing, n.a, DigitFT(n.b)
         i -= j
-        j = len(n.b)
-        i <= j && return (n.a,), n.b, ()
+        i <= len(n.b) && return DigitFT(n.a), n.b, nothing
     else
+        c = something(n.c)
         j = len(n.a)
-        i <= j && return (), n.a, (n.b, something(n.c))
+        i <= j && return nothing, n.a, DigitFT(n.b, c)
         i -= j
         j = len(n.b)
-        i <= j && return (n.a,), n.b, (something(n.c),)
+        i <= j && return DigitFT(n.a), n.b, DigitFT(c)
         i -= j
-        j = len(something(n.c))
-        i <= j && return (n.a, n.b), something(n.c), ()
+        i <= len(c) && return DigitFT(n.a, n.b), c, nothing
     end
     throw(BoundsError())
 end
@@ -444,19 +475,18 @@ end
 function split(n::Node23, i)
     if isnothing(n.c)
         j = len(n.a)
-        i <= j && return (), n.a, (n.b,)
+        i <= j && return nothing, n.a, DigitFT(n.b)
         i -= j
-        j = len(n.b)
-        i <= j && return (n.a,), n.b, ()
+        i <= len(n.b) && return DigitFT(n.a), n.b, nothing
     else
+        c = something(n.c)
         j = len(n.a)
-        i <= j && return (), n.a, (n.b, something(n.c))
+        i <= j && return nothing, n.a, DigitFT(n.b, c)
         i -= j
         j = len(n.b)
-        i <= j && return (n.a,), n.b, (something(n.c),)
+        i <= j && return DigitFT(n.a), n.b, DigitFT(c)
         i -= j
-        j = len(something(n.c))
-        i <= j && return (n.a, n.b), something(n.c), ()
+        i <= len(c) && return DigitFT(n.a, n.b), c, nothing
     end
     throw(BoundsError())
 end
@@ -469,25 +499,22 @@ function collect(tree::FingerTree)
 end
 
 const NonEmptyFT{T} = Union{SingleFT{T},DeepFT{T}}
-deepl(::Tuple{}, ::EmptyFT{T}, right::DigitFT) where {T} = toftree(right)
-function deepl(::Tuple{}, ft::NonEmptyFT{T}, right::DigitFT) where {T}
-    x, ft2 = splitl(ft)
-    x = digit(x)
-    DeepFT(x, ft2, right)
-end
-deepl(d::DigitFT, ft::DeepFT{T}, dr::DigitFT) where {T} = DeepFT(d, ft, dr)
-deepl(t, ft::NonEmptyFT{T}, dr::DigitFT) where {T} = DeepFT(DigitFT(t...), ft, dr)
-deepl(t, ft::EmptyFT{T}, dr::DigitFT) where {T} = DeepFT(digit(t), ft, dr)
 
-deepr(left::DigitFT, ::EmptyFT{T}, ::Tuple{}) where {T} = toftree(left)
-function deepr(left::DigitFT, ft::NonEmptyFT{T}, ::Tuple{}) where {T}
-    ft2, x = splitr(ft)
-    x = digit(x)
-    DeepFT(left, ft2, x)
+deepl(::Nothing, ::EmptyFT{T}, right::DigitFTRep{T}) where {T} = toftree(right)
+function deepl(::Nothing, ft::NonEmptyFT{T}, right::DigitFTRep{T}) where {T}
+    x, ft2 = splitl(ft)
+    DeepFT(digit(x), ft2, right)
 end
-deepr(d::DigitFT, ft::DeepFT{T}, dr::DigitFT) where {T} = DeepFT(d, ft, dr)
-deepr(d::DigitFT, ft::NonEmptyFT{T}, t) where {T} = DeepFT(d, ft, DigitFT(t...))
-deepr(d::DigitFT, ft::EmptyFT{T}, t) where {T} = DeepFT(d, ft, DigitFT(t...))
+deepl(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
+    DeepFT(left, ft, right)
+
+deepr(left::DigitFTRep{T}, ::EmptyFT{T}, ::Nothing) where {T} = toftree(left)
+function deepr(left::DigitFTRep{T}, ft::NonEmptyFT{T}, ::Nothing) where {T}
+    ft2, x = splitr(ft)
+    DeepFT(left, ft2, digit(x))
+end
+deepr(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
+    DeepFT(left, ft, right)
 
 split(ft::EmptyFT, i) = throw(BoundsError(ft, i))
 
@@ -502,23 +529,23 @@ function split(ft::DeepFT{T}, i) where {T}
     j = len(ft.left)
     if i <= j
         l, x, r = split(ft.left, i)
-        return isempty(l) ? EmptyFT{T}() : toftree(l), x, deepl(r, ft.succ, ft.right)
+        left = isnothing(l) ? EmptyFT{T}() : toftree(something(l))
+        return left, x, deepl(r, ft.succ, ft.right)
     end
     i -= j
     j = len(ft.succ)
     if i <= j
         ml, xs, mr = split(ft.succ, i)
         i -= len(ml)
-        l, x, r = isa(xs, T) ? ((), xs, ()) : split(xs, i)
-        ml = isempty(ml) ? EmptyFT{T}() : toftree(ml)
-        mr = isempty(mr) ? EmptyFT{T}() : toftree(mr)
+        l, x, r = isa(xs, T) ? (nothing, xs, nothing) : split(xs, i)
         return deepr(ft.left, ml, l), x, deepl(r, mr, ft.right)
     end
     i -= j
     j = len(ft.right)
     if i <= j
         l, x, r = split(ft.right, i)
-        return deepr(ft.left, ft.succ, l), x, isempty(r) ? EmptyFT{T}() : toftree(r)
+        right = isnothing(r) ? EmptyFT{T}() : toftree(something(r))
+        return deepr(ft.left, ft.succ, l), x, right
     end
     throw(BoundsError())
 end
