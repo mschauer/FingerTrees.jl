@@ -163,6 +163,22 @@ struct DeepFT{T} <: FingerTree{T}
 end
 
 const FingerTreeRep{T} = Union{EmptyFT{T}, SingleFT{T}, DeepFT{T}}
+
+const TraversalBranch{T} = Union{
+    DeepFT{T},
+    Node23{T},
+    DNode{T,1},
+    DNode{T,2},
+    DNode{T,3},
+    DNode{T,4},
+}
+
+mutable struct IterationState{T}
+    branches::Vector{TraversalBranch{T}}
+    next::Vector{Int}
+    pending::Vector{T}
+    pending_next::Int
+end
 #=
 DeepFT(l::DigitFT{T}, s::FingerTree{T} , r::DigitFT{T}) where {T} = DeepFT{T}(l, s, r)
 =#
@@ -559,14 +575,104 @@ end
 traverse(op, ft) = (traverse(op, ft, 1);)
 
 Base.iterate(::EmptyFT) = nothing
-function Base.iterate(ft::FingerTree)
-    x, rest = splitl(ft)
-    x, rest
+@inline function Base.iterate(ft::FingerTree{T}) where {T}
+    state = IterationState{T}(TraversalBranch{T}[], Int[], T[], 1)
+    sizehint!(state.branches, 16)
+    sizehint!(state.next, 16)
+    sizehint!(state.pending, 4)
+    _descend!(state, ft::FingerTreeRep{T})
+    _iterate(state)
 end
-Base.iterate(::FingerTree, ::EmptyFT) = nothing
-function Base.iterate(::FingerTree, rest::FingerTree)
-    x, tail = splitl(rest)
-    x, tail
+
+@inline Base.iterate(::FingerTree{T}, state::IterationState{T}) where {T} = _iterate(state)
+
+_descend!(::IterationState, ::EmptyFT) = nothing
+
+function _descend!(state::IterationState{T}, branch::TraversalBranch{T}) where {T}
+    push!(state.branches, branch)
+    push!(state.next, 1)
+    nothing
+end
+
+function _descend!(state::IterationState{T}, single::SingleFT{T}) where {T}
+    child = single.a
+    if child isa Tree23{T}
+        _descend!(state, child::Tree23Rep{T})
+    else
+        _descend!(state, child::T)
+    end
+end
+
+function _descend!(state::IterationState{T}, leaf::DLeaf{T}) where {T}
+    empty!(state.pending)
+    for child in leaf.child
+        push!(state.pending, child)
+    end
+    state.pending_next = 1
+    nothing
+end
+
+function _descend!(state::IterationState{T}, leaf::Leaf23{T}) where {T}
+    empty!(state.pending)
+    push!(state.pending, leaf.a)
+    push!(state.pending, leaf.b)
+    !isnothing(leaf.c) && push!(state.pending, something(leaf.c))
+    state.pending_next = 1
+    nothing
+end
+
+function _descend!(state::IterationState{T}, value::T) where {T}
+    empty!(state.pending)
+    push!(state.pending, value)
+    state.pending_next = 1
+    nothing
+end
+
+@inline function _iterate(state::IterationState{T}) where {T}
+    while true
+        if state.pending_next <= length(state.pending)
+            value = state.pending[state.pending_next]
+            state.pending_next += 1
+            return value, state
+        end
+
+        isempty(state.branches) && return nothing
+
+        branch = state.branches[end]
+        next = state.next[end]
+
+        if branch isa DeepFT{T}
+            if next == 1
+                state.next[end] = 2
+                child = branch.left
+            elseif next == 2
+                state.next[end] = 3
+                child = branch.succ
+            else
+                pop!(state.branches)
+                pop!(state.next)
+                child = branch.right
+            end
+            _descend!(state, child)
+        elseif branch isa DNode
+            if next == width(branch)
+                pop!(state.branches)
+                pop!(state.next)
+            else
+                state.next[end] = next + 1
+            end
+            _descend!(state, branch.child[next])
+        else
+            if next == width(branch)
+                pop!(state.branches)
+                pop!(state.next)
+            else
+                state.next[end] = next + 1
+            end
+            child = next == 1 ? branch.a : next == 2 ? branch.b : something(branch.c)
+            _descend!(state, child)
+        end
+    end
 end
 
 

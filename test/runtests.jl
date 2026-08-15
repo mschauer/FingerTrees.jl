@@ -71,6 +71,14 @@ end
     @test length(ft) == 100
     @test collect(ft) == collect(1:100)
     @test [x for x in ft] == collect(1:100)
+    @test [x for x in EmptyFT{Int}()] == Int[]
+    @test [x for x in FingerTree([42])] == [42]
+    @test [x for x in Iterators.take(ft, 17)] == collect(1:17)
+
+    deepft = FingerTree(1:1024)
+    @test [x for x in deepft] == collect(1:1024)
+    mixedft = randomft(1024)
+    @test [x for x in mixedft] == collect(1:1024)
     @test reduce(+, ft) == sum(1:100)
 
     left, x, right = FingerTrees.split(ft, 50)
