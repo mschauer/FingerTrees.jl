@@ -1,18 +1,25 @@
 using BenchmarkTools
+using DataStructures
 using FingerTrees
 using FunctionalCollections
-using DataStructures
+using InteractiveUtils
+using Printf
+using Statistics
 
 const FT = FingerTrees
 const FC = FunctionalCollections
 const DS = DataStructures
+
+# ---------------------------------------------------------------------------
+# Constructors and small helpers
+# ---------------------------------------------------------------------------
 
 function ft_build_right(n)
     x = FT.EmptyFT{Int}()
     for i in 1:n
         x = FT.conjr(x, i)
     end
-    x
+    return x
 end
 
 function ft_build_left(n)
@@ -20,7 +27,7 @@ function ft_build_left(n)
     for i in 1:n
         x = FT.conjl(i, x)
     end
-    x
+    return x
 end
 
 function pv_build_right(n)
@@ -28,7 +35,7 @@ function pv_build_right(n)
     for i in 1:n
         x = FC.push(x, i)
     end
-    x
+    return x
 end
 
 function deque_build_right(n)
@@ -36,7 +43,7 @@ function deque_build_right(n)
     for i in 1:n
         push!(x, i)
     end
-    x
+    return x
 end
 
 function deque_build_left(n)
@@ -44,7 +51,7 @@ function deque_build_left(n)
     for i in 1:n
         pushfirst!(x, i)
     end
-    x
+    return x
 end
 
 function vector_build_right(n)
@@ -53,7 +60,7 @@ function vector_build_right(n)
     for i in 1:n
         push!(x, i)
     end
-    x
+    return x
 end
 
 function vector_build_left(n)
@@ -62,7 +69,13 @@ function vector_build_left(n)
     for i in 1:n
         pushfirst!(x, i)
     end
-    x
+    return x
+end
+
+function vector_assoc(x, k, value)
+    y = copy(x)
+    y[k] = value
+    return y
 end
 
 function checksum(x)
@@ -70,96 +83,168 @@ function checksum(x)
     for y in x
         s += y
     end
-    s
+    return s
 end
 
-function make_deque(n)
-    d = DS.Deque{Int}()
-    for i in 1:n
-        push!(d, i)
-    end
-    d
-end
+# ---------------------------------------------------------------------------
+# Benchmark suite
+#
+# Values used by single-operation benchmarks are put behind Ref.  This keeps
+# the benchmark inputs runtime values and avoids constant folding / hoisting
+# of operations such as indexing and traversal.
+#
+# Mutable benchmarks use setup + evals=1 so every timed operation sees a fresh
+# container and mutations do not accumulate across evaluations.
+# ---------------------------------------------------------------------------
 
 const SUITE = BenchmarkGroup()
 
 for n in (32, 1024, 32768)
     g = SUITE["n=$n"] = BenchmarkGroup()
 
-    ft  = FingerTree(1:n)
-    pv  = FC.PersistentVector(1:n)
+    ft = FT.FingerTree(1:n)
+    pv = FC.PersistentVector(1:n)
+    deq = deque_build_right(n)
     vec = collect(1:n)
 
-    # Construction
-    g["build", "ft-right"]    = @benchmarkable ft_build_right($n)
-    g["build", "ft-left"]     = @benchmarkable ft_build_left($n)
-    g["build", "pv-right"]    = @benchmarkable pv_build_right($n)
-    g["build", "deque-right"] = @benchmarkable deque_build_right($n)
-    g["build", "deque-left"]  = @benchmarkable deque_build_left($n)
-    g["build", "vector-right"] = @benchmarkable vector_build_right($n)
-    g["build", "vector-left"]  = @benchmarkable vector_build_left($n)
-
-    # Single persistent end operations
-    g["push-right", "ft"] = @benchmarkable FT.conjr($ft, 0)
-    g["push-right", "pv"] = @benchmarkable FC.push($pv, 0)
-
-    g["push-left", "ft"] = @benchmarkable FT.conjl(0, $ft)
-
-    g["pop-right", "ft"] = @benchmarkable FT.splitr($ft)
-    g["pop-right", "pv"] = @benchmarkable FC.pop($pv)
-
-    g["pop-left", "ft"] = @benchmarkable FT.splitl($ft)
-
-    # Mutable lower bounds. Setup is outside the timed operation.
-    g["push-right", "deque"] =
-        @benchmarkable push!(d, 0) setup=(d = make_deque($n)) evals=1
-
-    g["push-left", "deque"] =
-        @benchmarkable pushfirst!(d, 0) setup=(d = make_deque($n)) evals=1
-
-    g["pop-right", "deque"] =
-        @benchmarkable pop!(d) setup=(d = make_deque($n)) evals=1
-
-    g["pop-left", "deque"] =
-        @benchmarkable popfirst!(d) setup=(d = make_deque($n)) evals=1
-
-    g["push-right", "vector"] =
-        @benchmarkable push!(v, 0) setup=(v = copy($vec)) evals=1
-
-    g["push-left", "vector"] =
-        @benchmarkable pushfirst!(v, 0) setup=(v = copy($vec)) evals=1
-
-    g["pop-right", "vector"] =
-        @benchmarkable pop!(v) setup=(v = copy($vec)) evals=1
-
-    g["pop-left", "vector"] =
-        @benchmarkable popfirst!(v) setup=(v = copy($vec)) evals=1
-
-    # Indexing
     k = n ÷ 2
 
-    g["index", "ft"]     = @benchmarkable $ft[$k]
-    g["index", "pv"]     = @benchmarkable $pv[$k]
-    g["index", "vector"] = @benchmarkable $vec[$k]
+    ftref = Ref(ft)
+    pvref = Ref(pv)
+    deqref = Ref(deq)
+    vecref = Ref(vec)
+    kref = Ref(k)
 
-    # Persistent update
-    g["assoc", "ft"] = @benchmarkable FT.assoc($ft, 0, $k)
-    g["assoc", "pv"] = @benchmarkable FC.assoc($pv, $k, 0)
+    # Construction ----------------------------------------------------------
 
-    # Traversal
-    g["iterate", "ft"]     = @benchmarkable checksum($ft)
-    g["iterate", "pv"]     = @benchmarkable checksum($pv)
-    g["iterate", "vector"] = @benchmarkable checksum($vec)
+    g["build", "ft-right"] =
+        @benchmarkable ft_build_right($n)
 
-    # Operations for which finger trees should be algorithmically attractive
+    g["build", "ft-left"] =
+        @benchmarkable ft_build_left($n)
+
+    g["build", "pv-right"] =
+        @benchmarkable pv_build_right($n)
+
+    g["build", "deque-right"] =
+        @benchmarkable deque_build_right($n)
+
+    g["build", "deque-left"] =
+        @benchmarkable deque_build_left($n)
+
+    g["build", "vector-right"] =
+        @benchmarkable vector_build_right($n)
+
+    g["build", "vector-left"] =
+        @benchmarkable vector_build_left($n)
+
+    # Single end operations -------------------------------------------------
+
+    g["push-right", "ft"] =
+        @benchmarkable FT.conjr($(ftref)[], 0)
+
+    g["push-left", "ft"] =
+        @benchmarkable FT.conjl(0, $(ftref)[])
+
+    g["pop-right", "ft"] =
+        @benchmarkable FT.splitr($(ftref)[])
+
+    g["pop-left", "ft"] =
+        @benchmarkable FT.splitl($(ftref)[])
+
+    g["push-right", "pv"] =
+        @benchmarkable FC.push($(pvref)[], 0)
+
+    g["pop-right", "pv"] =
+        @benchmarkable FC.pop($(pvref)[])
+
+    # The mutable structures need a fresh value for every timed mutation.
+    g["push-right", "deque"] =
+        @benchmarkable push!(dref[], 0) setup=(dref = Ref(deque_build_right($n))) evals=1
+
+    g["push-left", "deque"] =
+        @benchmarkable pushfirst!(dref[], 0) setup=(dref = Ref(deque_build_right($n))) evals=1
+
+    g["pop-right", "deque"] =
+        @benchmarkable pop!(dref[]) setup=(dref = Ref(deque_build_right($n))) evals=1
+
+    g["pop-left", "deque"] =
+        @benchmarkable popfirst!(dref[]) setup=(dref = Ref(deque_build_right($n))) evals=1
+
+    # Give Vector one spare slot for push benchmarks so that we measure the
+    # operation itself rather than forcing a reallocation on every sample.
+    g["push-right", "vector"] =
+        @benchmarkable push!(vref[], 0) setup=(
+            v = copy($(vecref)[]);
+            sizehint!(v, $n + 1);
+            vref = Ref(v)
+        ) evals=1
+
+    g["push-left", "vector"] =
+        @benchmarkable pushfirst!(vref[], 0) setup=(
+            v = copy($(vecref)[]);
+            sizehint!(v, $n + 1);
+            vref = Ref(v)
+        ) evals=1
+
+    g["pop-right", "vector"] =
+        @benchmarkable pop!(vref[]) setup=(vref = Ref(copy($(vecref)[]))) evals=1
+
+    g["pop-left", "vector"] =
+        @benchmarkable popfirst!(vref[]) setup=(vref = Ref(copy($(vecref)[]))) evals=1
+
+    # Indexing --------------------------------------------------------------
+
+    g["index", "ft"] =
+        @benchmarkable $(ftref)[][$(kref)[]]
+
+    g["index", "pv"] =
+        @benchmarkable $(pvref)[][$(kref)[]]
+
+    g["index", "vector"] =
+        @benchmarkable $(vecref)[][$(kref)[]]
+
+    # Persistent / copy-on-update ------------------------------------------
+
+    g["assoc", "ft"] =
+        @benchmarkable FT.assoc($(ftref)[], 0, $(kref)[])
+
+    g["assoc", "pv"] =
+        @benchmarkable FC.assoc($(pvref)[], $(kref)[], 0)
+
+    g["assoc", "vector-copy"] =
+        @benchmarkable vector_assoc($(vecref)[], $(kref)[], 0)
+
+    # Traversal -------------------------------------------------------------
+
+    g["iterate", "ft"] =
+        @benchmarkable checksum($(ftref)[])
+
+    g["iterate", "pv"] =
+        @benchmarkable checksum($(pvref)[])
+
+    g["iterate", "deque"] =
+        @benchmarkable checksum($(deqref)[])
+
+    g["iterate", "vector"] =
+        @benchmarkable checksum($(vecref)[])
+
+    # Split -----------------------------------------------------------------
+
     g["split-middle", "ft"] =
-        @benchmarkable FT.split($ft, $k)
+        @benchmarkable FT.split($(ftref)[], $(kref)[])
 
     g["split-middle", "vector"] =
-        @benchmarkable ($vec[1:$k-1], $vec[$k], $vec[$k+1:end])
+        @benchmarkable begin
+            v = $(vecref)[]
+            j = $(kref)[]
+            (v[1:j-1], v[j], v[j+1:end])
+        end
 
-    ft1 = FingerTree(1:k)
-    ft2 = FingerTree(k+1:n)
+    # Concatenation ---------------------------------------------------------
+
+    ft1 = FT.FingerTree(1:k)
+    ft2 = FT.FingerTree(k+1:n)
 
     pv1 = FC.PersistentVector(1:k)
     pv2 = FC.PersistentVector(k+1:n)
@@ -167,16 +252,93 @@ for n in (32, 1024, 32768)
     v1 = collect(1:k)
     v2 = collect(k+1:n)
 
+    ft1ref = Ref(ft1)
+    ft2ref = Ref(ft2)
+    pv1ref = Ref(pv1)
+    pv2ref = Ref(pv2)
+    v1ref = Ref(v1)
+    v2ref = Ref(v2)
+
     g["concat", "ft"] =
-        @benchmarkable FT.concat($ft1, $ft2)
+        @benchmarkable FT.concat($(ft1ref)[], $(ft2ref)[])
 
     g["concat", "pv"] =
-        @benchmarkable FC.append($pv1, $pv2)
+        @benchmarkable FC.append($(pv1ref)[], $(pv2ref)[])
 
     g["concat", "vector"] =
-        @benchmarkable vcat($v1, $v2)
+        @benchmarkable vcat($(v1ref)[], $(v2ref)[])
 end
 
+# ---------------------------------------------------------------------------
+# Reporting
+# ---------------------------------------------------------------------------
+
+function n_from_key(key)
+    return parse(Int, split(key, "=")[2])
+end
+
+function print_results(io, results)
+    println(io,
+        "n\toperation\timplementation\tmedian_ns\tminimum_ns\tmemory_bytes\tallocations"
+    )
+
+    nkeys = sort(collect(keys(results)); by=n_from_key)
+
+    for nkey in nkeys
+        n = n_from_key(nkey)
+        group = results[nkey]
+
+        entries = sort(collect(group); by=x -> string(first(x)))
+
+        for entry in entries
+            key = first(entry)
+            trial = last(entry)
+            operation, implementation = key
+
+            med = median(trial)
+            minest = minimum(trial)
+
+            @printf(
+                io,
+                "%d\t%s\t%s\t%.3f\t%.3f\t%d\t%d\n",
+                n,
+                operation,
+                implementation,
+                med.time,
+                minest.time,
+                med.memory,
+                med.allocs,
+            )
+        end
+    end
+end
+
+function write_versioninfo(path)
+    open(path, "w") do io
+        versioninfo(io)
+    end
+end
+
+println("Running benchmark suite...")
 results = run(SUITE; verbose=true)
 
-println(results)
+println()
+print_results(stdout, results)
+
+results_dir = joinpath(@__DIR__, "results")
+mkpath(results_dir)
+
+version_tag = "julia-" * string(VERSION)
+
+tsv_path = joinpath(results_dir, "baseline-" * version_tag * ".tsv")
+open(tsv_path, "w") do io
+    print_results(io, results)
+end
+
+version_path = joinpath(results_dir, "versioninfo-" * version_tag * ".txt")
+write_versioninfo(version_path)
+
+println()
+println("Saved:")
+println("  ", tsv_path)
+println("  ", version_path)
