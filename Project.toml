@@ -1,0 +1,13 @@
+name = "FingerTrees"
+uuid = "3d24749a-0845-4c16-a2f2-051d7e3c7003"
+version = "0.1.0"
+
+[compat]
+julia = "1.10"
+
+[extras]
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Random", "Test"]
