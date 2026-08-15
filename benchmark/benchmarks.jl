@@ -14,7 +14,7 @@ const DS = DataStructures
 # Constructors and small helpers
 # ---------------------------------------------------------------------------
 
-function ft_build_right(n)
+Base.@noinline function ft_build_right(n)
     x = FT.EmptyFT{Int}()
     for i in 1:n
         x = FT.conjr(x, i)
@@ -22,7 +22,7 @@ function ft_build_right(n)
     return x
 end
 
-function ft_build_left(n)
+Base.@noinline function ft_build_left(n)
     x = FT.EmptyFT{Int}()
     for i in 1:n
         x = FT.conjl(i, x)
@@ -30,7 +30,7 @@ function ft_build_left(n)
     return x
 end
 
-function pv_build_right(n)
+Base.@noinline function pv_build_right(n)
     x = FC.PersistentVector{Int}()
     for i in 1:n
         x = FC.push(x, i)
@@ -38,7 +38,7 @@ function pv_build_right(n)
     return x
 end
 
-function deque_build_right(n)
+Base.@noinline function deque_build_right(n)
     x = DS.Deque{Int}()
     for i in 1:n
         push!(x, i)
@@ -46,7 +46,7 @@ function deque_build_right(n)
     return x
 end
 
-function deque_build_left(n)
+Base.@noinline function deque_build_left(n)
     x = DS.Deque{Int}()
     for i in 1:n
         pushfirst!(x, i)
@@ -54,7 +54,7 @@ function deque_build_left(n)
     return x
 end
 
-function vector_build_right(n)
+Base.@noinline function vector_build_right(n)
     x = Int[]
     sizehint!(x, n)
     for i in 1:n
@@ -63,7 +63,7 @@ function vector_build_right(n)
     return x
 end
 
-function vector_build_left(n)
+Base.@noinline function vector_build_left(n)
     x = Int[]
     sizehint!(x, n)
     for i in 1:n
@@ -87,20 +87,159 @@ function checksum(x)
 end
 
 # ---------------------------------------------------------------------------
+# Runtime-dependent microbenchmark batches
+# ---------------------------------------------------------------------------
+
+function probe_indices(n, count)
+    return [mod(17 * i + 13, n) + 1 for i in 1:count]
+end
+
+micro_batch_size(n) = min(256, max(16, n ÷ 4))
+index_batch_size(n) = max(256, micro_batch_size(n))
+
+Base.@noinline function bench_index(x, indices)
+    s = 0
+    for i in indices
+        s += x[i]
+    end
+    return s
+end
+
+Base.@noinline function bench_assoc_ft(x, indices, values)
+    y = x
+    for q in eachindex(indices, values)
+        y = FT.assoc(y, values[q], indices[q])
+    end
+    return y
+end
+
+Base.@noinline function bench_assoc_pv(x, indices, values)
+    y = x
+    for q in eachindex(indices, values)
+        y = FC.assoc(y, indices[q], values[q])
+    end
+    return y
+end
+
+Base.@noinline function bench_assoc_vector(x, indices, values)
+    y = x
+    for q in eachindex(indices, values)
+        y = vector_assoc(y, indices[q], values[q])
+    end
+    return y
+end
+
+Base.@noinline function bench_push_right_ft(x, values)
+    y = x
+    for value in values
+        y = FT.conjr(y, value)
+    end
+    return y
+end
+
+Base.@noinline function bench_push_left_ft(x, values)
+    y = x
+    for value in values
+        y = FT.conjl(value, y)
+    end
+    return y
+end
+
+Base.@noinline function bench_push_right_pv(x, values)
+    y = x
+    for value in values
+        y = FC.push(y, value)
+    end
+    return y
+end
+
+Base.@noinline function bench_push_right_mutable!(x, values)
+    for value in values
+        push!(x, value)
+    end
+    return x
+end
+
+Base.@noinline function bench_push_left_mutable!(x, values)
+    for value in values
+        pushfirst!(x, value)
+    end
+    return x
+end
+
+Base.@noinline function bench_pop_right_ft(x, count)
+    y = x
+    s = 0
+    for _ in 1:count
+        y, value = FT.splitr(y)
+        s += value
+    end
+    return y, s
+end
+
+Base.@noinline function bench_pop_left_ft(x, count)
+    y = x
+    s = 0
+    for _ in 1:count
+        value, y = FT.splitl(y)
+        s += value
+    end
+    return y, s
+end
+
+Base.@noinline function bench_pop_right_pv(x, count)
+    y = x
+    for _ in 1:count
+        y = FC.pop(y)
+    end
+    return y
+end
+
+Base.@noinline function bench_pop_right_mutable!(x, count)
+    s = 0
+    for _ in 1:count
+        s += pop!(x)
+    end
+    return x, s
+end
+
+Base.@noinline function bench_pop_left_mutable!(x, count)
+    s = 0
+    for _ in 1:count
+        s += popfirst!(x)
+    end
+    return x, s
+end
+
+Base.@noinline bench_checksum(x) = checksum(x)
+Base.@noinline bench_split_ft(x, k) = FT.split(x, k)
+
+Base.@noinline function bench_split_vector(x, k)
+    return (x[1:k-1], x[k], x[k+1:end])
+end
+
+Base.@noinline bench_concat_ft(a, b) = FT.concat(a, b)
+Base.@noinline bench_concat_pv(a, b) = FC.append(a, b)
+Base.@noinline bench_concat_vector(a, b) = vcat(a, b)
+
+# ---------------------------------------------------------------------------
 # Benchmark suite
-#
-# Values used by single-operation benchmarks are put behind Ref.  This keeps
-# the benchmark inputs runtime values and avoids constant folding / hoisting
-# of operations such as indexing and traversal.
-#
-# Mutable benchmarks use setup + evals=1 so every timed operation sees a fresh
-# container and mutations do not accumulate across evaluations.
 # ---------------------------------------------------------------------------
 
 const SUITE = BenchmarkGroup()
 
+# Number of logical operations performed by one evaluation of each benchmark.
+const OPS_PER_EVAL = Dict{Tuple{String,Tuple{String,String}},Int}()
+
+function addbench!(group, nkey, key, benchmark; ops=1)
+    group[key] = benchmark
+    OPS_PER_EVAL[(nkey, key)] = ops
+    return benchmark
+end
+
 for n in (32, 1024, 32768)
-    g = SUITE["n=$n"] = BenchmarkGroup()
+    nkey = "n=$n"
+    g = SUITE[nkey] = BenchmarkGroup()
 
     ft = FT.FingerTree(1:n)
     pv = FC.PersistentVector(1:n)
@@ -115,131 +254,171 @@ for n in (32, 1024, 32768)
     vecref = Ref(vec)
     kref = Ref(k)
 
+    micro_count = micro_batch_size(n)
+    index_count = index_batch_size(n)
+
+    micro_indices = probe_indices(n, micro_count)
+    index_indices = probe_indices(n, index_count)
+    micro_values = collect(-1:-1:-micro_count)
+
     # Construction ----------------------------------------------------------
 
-    g["build", "ft-right"] =
-        @benchmarkable ft_build_right($n)
+    addbench!(g, nkey, ("build", "ft-right"),
+        @benchmarkable ft_build_right($n))
 
-    g["build", "ft-left"] =
-        @benchmarkable ft_build_left($n)
+    addbench!(g, nkey, ("build", "ft-left"),
+        @benchmarkable ft_build_left($n))
 
-    g["build", "pv-right"] =
-        @benchmarkable pv_build_right($n)
+    addbench!(g, nkey, ("build", "pv-right"),
+        @benchmarkable pv_build_right($n))
 
-    g["build", "deque-right"] =
-        @benchmarkable deque_build_right($n)
+    addbench!(g, nkey, ("build", "deque-right"),
+        @benchmarkable deque_build_right($n))
 
-    g["build", "deque-left"] =
-        @benchmarkable deque_build_left($n)
+    addbench!(g, nkey, ("build", "deque-left"),
+        @benchmarkable deque_build_left($n))
 
-    g["build", "vector-right"] =
-        @benchmarkable vector_build_right($n)
+    addbench!(g, nkey, ("build", "vector-right"),
+        @benchmarkable vector_build_right($n))
 
-    g["build", "vector-left"] =
-        @benchmarkable vector_build_left($n)
+    addbench!(g, nkey, ("build", "vector-left"),
+        @benchmarkable vector_build_left($n))
 
-    # Single end operations -------------------------------------------------
+    # End insertion: batched ------------------------------------------------
 
-    g["push-right", "ft"] =
-        @benchmarkable FT.conjr($(ftref)[], 0)
+    addbench!(g, nkey, ("push-right", "ft"),
+        @benchmarkable bench_push_right_ft($(ftref)[], $micro_values) evals=1;
+        ops=micro_count)
 
-    g["push-left", "ft"] =
-        @benchmarkable FT.conjl(0, $(ftref)[])
+    addbench!(g, nkey, ("push-left", "ft"),
+        @benchmarkable bench_push_left_ft($(ftref)[], $micro_values) evals=1;
+        ops=micro_count)
 
-    g["pop-right", "ft"] =
-        @benchmarkable FT.splitr($(ftref)[])
+    addbench!(g, nkey, ("push-right", "pv"),
+        @benchmarkable bench_push_right_pv($(pvref)[], $micro_values) evals=1;
+        ops=micro_count)
 
-    g["pop-left", "ft"] =
-        @benchmarkable FT.splitl($(ftref)[])
+    addbench!(g, nkey, ("push-right", "deque"),
+        @benchmarkable bench_push_right_mutable!(d, $micro_values) setup=(
+            d = deque_build_right($n)
+        ) evals=1;
+        ops=micro_count)
 
-    g["push-right", "pv"] =
-        @benchmarkable FC.push($(pvref)[], 0)
+    addbench!(g, nkey, ("push-left", "deque"),
+        @benchmarkable bench_push_left_mutable!(d, $micro_values) setup=(
+            d = deque_build_right($n)
+        ) evals=1;
+        ops=micro_count)
 
-    g["pop-right", "pv"] =
-        @benchmarkable FC.pop($(pvref)[])
-
-    # The mutable structures need a fresh value for every timed mutation.
-    g["push-right", "deque"] =
-        @benchmarkable push!(dref[], 0) setup=(dref = Ref(deque_build_right($n))) evals=1
-
-    g["push-left", "deque"] =
-        @benchmarkable pushfirst!(dref[], 0) setup=(dref = Ref(deque_build_right($n))) evals=1
-
-    g["pop-right", "deque"] =
-        @benchmarkable pop!(dref[]) setup=(dref = Ref(deque_build_right($n))) evals=1
-
-    g["pop-left", "deque"] =
-        @benchmarkable popfirst!(dref[]) setup=(dref = Ref(deque_build_right($n))) evals=1
-
-    # Give Vector one spare slot for push benchmarks so that we measure the
-    # operation itself rather than forcing a reallocation on every sample.
-    g["push-right", "vector"] =
-        @benchmarkable push!(vref[], 0) setup=(
+    addbench!(g, nkey, ("push-right", "vector"),
+        @benchmarkable bench_push_right_mutable!(v, $micro_values) setup=(
             v = copy($(vecref)[]);
-            sizehint!(v, $n + 1);
-            vref = Ref(v)
-        ) evals=1
+            sizehint!(v, $n + $micro_count)
+        ) evals=1;
+        ops=micro_count)
 
-    g["push-left", "vector"] =
-        @benchmarkable pushfirst!(vref[], 0) setup=(
+    addbench!(g, nkey, ("push-left", "vector"),
+        @benchmarkable bench_push_left_mutable!(v, $micro_values) setup=(
             v = copy($(vecref)[]);
-            sizehint!(v, $n + 1);
-            vref = Ref(v)
-        ) evals=1
+            sizehint!(v, $n + $micro_count)
+        ) evals=1;
+        ops=micro_count)
 
-    g["pop-right", "vector"] =
-        @benchmarkable pop!(vref[]) setup=(vref = Ref(copy($(vecref)[]))) evals=1
+    # End removal: batched --------------------------------------------------
 
-    g["pop-left", "vector"] =
-        @benchmarkable popfirst!(vref[]) setup=(vref = Ref(copy($(vecref)[]))) evals=1
+    pop_count = min(micro_count, max(1, n ÷ 2))
 
-    # Indexing --------------------------------------------------------------
+    addbench!(g, nkey, ("pop-right", "ft"),
+        @benchmarkable bench_pop_right_ft($(ftref)[], $pop_count) evals=1;
+        ops=pop_count)
 
-    g["index", "ft"] =
-        @benchmarkable $(ftref)[][$(kref)[]]
+    addbench!(g, nkey, ("pop-left", "ft"),
+        @benchmarkable bench_pop_left_ft($(ftref)[], $pop_count) evals=1;
+        ops=pop_count)
 
-    g["index", "pv"] =
-        @benchmarkable $(pvref)[][$(kref)[]]
+    addbench!(g, nkey, ("pop-right", "pv"),
+        @benchmarkable bench_pop_right_pv($(pvref)[], $pop_count) evals=1;
+        ops=pop_count)
 
-    g["index", "vector"] =
-        @benchmarkable $(vecref)[][$(kref)[]]
+    addbench!(g, nkey, ("pop-right", "deque"),
+        @benchmarkable bench_pop_right_mutable!(d, $pop_count) setup=(
+            d = deque_build_right($n)
+        ) evals=1;
+        ops=pop_count)
 
-    # Persistent / copy-on-update ------------------------------------------
+    addbench!(g, nkey, ("pop-left", "deque"),
+        @benchmarkable bench_pop_left_mutable!(d, $pop_count) setup=(
+            d = deque_build_right($n)
+        ) evals=1;
+        ops=pop_count)
 
-    g["assoc", "ft"] =
-        @benchmarkable FT.assoc($(ftref)[], 0, $(kref)[])
+    addbench!(g, nkey, ("pop-right", "vector"),
+        @benchmarkable bench_pop_right_mutable!(v, $pop_count) setup=(
+            v = copy($(vecref)[])
+        ) evals=1;
+        ops=pop_count)
 
-    g["assoc", "pv"] =
-        @benchmarkable FC.assoc($(pvref)[], $(kref)[], 0)
+    addbench!(g, nkey, ("pop-left", "vector"),
+        @benchmarkable bench_pop_left_mutable!(v, $pop_count) setup=(
+            v = copy($(vecref)[])
+        ) evals=1;
+        ops=pop_count)
 
-    g["assoc", "vector-copy"] =
-        @benchmarkable vector_assoc($(vecref)[], $(kref)[], 0)
+    # Indexing: runtime-dependent batch ------------------------------------
+
+    addbench!(g, nkey, ("index", "ft"),
+        @benchmarkable bench_index($(ftref)[], $index_indices) evals=1;
+        ops=index_count)
+
+    addbench!(g, nkey, ("index", "pv"),
+        @benchmarkable bench_index($(pvref)[], $index_indices) evals=1;
+        ops=index_count)
+
+    addbench!(g, nkey, ("index", "vector"),
+        @benchmarkable bench_index($(vecref)[], $index_indices) evals=1;
+        ops=index_count)
+
+    # Persistent / copy-on-update: runtime-dependent batch ------------------
+
+    addbench!(g, nkey, ("assoc", "ft"),
+        @benchmarkable bench_assoc_ft(
+            $(ftref)[], $micro_indices, $micro_values
+        ) evals=1;
+        ops=micro_count)
+
+    addbench!(g, nkey, ("assoc", "pv"),
+        @benchmarkable bench_assoc_pv(
+            $(pvref)[], $micro_indices, $micro_values
+        ) evals=1;
+        ops=micro_count)
+
+    addbench!(g, nkey, ("assoc", "vector-copy"),
+        @benchmarkable bench_assoc_vector(
+            $(vecref)[], $micro_indices, $micro_values
+        ) evals=1;
+        ops=micro_count)
 
     # Traversal -------------------------------------------------------------
 
-    g["iterate", "ft"] =
-        @benchmarkable checksum($(ftref)[])
+    addbench!(g, nkey, ("iterate", "ft"),
+        @benchmarkable bench_checksum($(ftref)[]) evals=1)
 
-    g["iterate", "pv"] =
-        @benchmarkable checksum($(pvref)[])
+    addbench!(g, nkey, ("iterate", "pv"),
+        @benchmarkable bench_checksum($(pvref)[]) evals=1)
 
-    g["iterate", "deque"] =
-        @benchmarkable checksum($(deqref)[])
+    addbench!(g, nkey, ("iterate", "deque"),
+        @benchmarkable bench_checksum($(deqref)[]) evals=1)
 
-    g["iterate", "vector"] =
-        @benchmarkable checksum($(vecref)[])
+    addbench!(g, nkey, ("iterate", "vector"),
+        @benchmarkable bench_checksum($(vecref)[]) evals=1)
 
     # Split -----------------------------------------------------------------
 
-    g["split-middle", "ft"] =
-        @benchmarkable FT.split($(ftref)[], $(kref)[])
+    addbench!(g, nkey, ("split-middle", "ft"),
+        @benchmarkable bench_split_ft($(ftref)[], $(kref)[]) evals=1)
 
-    g["split-middle", "vector"] =
-        @benchmarkable begin
-            v = $(vecref)[]
-            j = $(kref)[]
-            (v[1:j-1], v[j], v[j+1:end])
-        end
+    addbench!(g, nkey, ("split-middle", "vector"),
+        @benchmarkable bench_split_vector($(vecref)[], $(kref)[]) evals=1)
 
     # Concatenation ---------------------------------------------------------
 
@@ -259,14 +438,14 @@ for n in (32, 1024, 32768)
     v1ref = Ref(v1)
     v2ref = Ref(v2)
 
-    g["concat", "ft"] =
-        @benchmarkable FT.concat($(ft1ref)[], $(ft2ref)[])
+    addbench!(g, nkey, ("concat", "ft"),
+        @benchmarkable bench_concat_ft($(ft1ref)[], $(ft2ref)[]) evals=1)
 
-    g["concat", "pv"] =
-        @benchmarkable FC.append($(pv1ref)[], $(pv2ref)[])
+    addbench!(g, nkey, ("concat", "pv"),
+        @benchmarkable bench_concat_pv($(pv1ref)[], $(pv2ref)[]) evals=1)
 
-    g["concat", "vector"] =
-        @benchmarkable vcat($(v1ref)[], $(v2ref)[])
+    addbench!(g, nkey, ("concat", "vector"),
+        @benchmarkable bench_concat_vector($(v1ref)[], $(v2ref)[]) evals=1)
 end
 
 # ---------------------------------------------------------------------------
@@ -278,8 +457,11 @@ function n_from_key(key)
 end
 
 function print_results(io, results)
-    println(io,
-        "n\toperation\timplementation\tmedian_ns\tminimum_ns\tmemory_bytes\tallocations"
+    println(
+        io,
+        "n\toperation\timplementation\tops_per_eval\t" *
+        "median_ns_per_op\tminimum_ns_per_op\t" *
+        "memory_bytes_per_op\tallocations_per_op"
     )
 
     nkeys = sort(collect(keys(results)); by=n_from_key)
@@ -295,19 +477,21 @@ function print_results(io, results)
             trial = last(entry)
             operation, implementation = key
 
+            ops = OPS_PER_EVAL[(nkey, key)]
             med = median(trial)
             minest = minimum(trial)
 
             @printf(
                 io,
-                "%d\t%s\t%s\t%.3f\t%.3f\t%d\t%d\n",
+                "%d\t%s\t%s\t%d\t%.3f\t%.3f\t%.3f\t%.3f\n",
                 n,
                 operation,
                 implementation,
-                med.time,
-                minest.time,
-                med.memory,
-                med.allocs,
+                ops,
+                med.time / ops,
+                minest.time / ops,
+                med.memory / ops,
+                med.allocs / ops,
             )
         end
     end
