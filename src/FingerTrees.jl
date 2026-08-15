@@ -128,7 +128,7 @@ struct EmptyFT{T} <: FingerTree{T}
 end
 
 struct SingleFT{T} <: FingerTree{T}
-    a::Union{T,Tree23{T}}
+    a::Union{T,Tree23Rep{T}}
     SingleFT(a::T) where {T} = new{T}(a)
     SingleFT(a::Tree23{T}) where {T} = new{T}(a)
 end
