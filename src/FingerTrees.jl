@@ -255,19 +255,19 @@ splitr(digit::DigitFT4{T}) where {T} = DigitFT(digit.child[1:end-1]...), digit.c
 
 function Base.getindex(d::DigitFT{T}, i::Int)::T where {T}
     for k in 1:width(d)
-        j = len(d.child[k])
+        j = len(d.child[k])::Int
         if i <= j return getindex(d.child[k], i) end
         i -= j
     end
     throw(BoundsError())
 end
 function Base.getindex(n::Tree23{T}, i::Int)::T where {T}
-    j = len(n.a)
+    j = len(n.a)::Int
     i <= j && return getindex(n.a, i)
-    i -= j; j = len(n.b)
+    i -= j; j = len(n.b)::Int
     i <= j && return getindex(n.b, i)
     if !isnothing(n.c)
-        i -= j; j = len(something(n.c))
+        i -= j; j = len(something(n.c))::Int
         i <= j && return getindex(something(n.c), i)
     end
     throw(BoundsError())
@@ -280,11 +280,11 @@ function Base.getindex(ft::SingleFT{T}, i)::T where {T}
     getindex(ft.a, i)
 end
 function Base.getindex(ft::DeepFT{T}, i::Int)::T where {T}
-    j = len(ft.left)
+    j = len(ft.left)::Int
     if i <= j return getindex(ft.left, i) end
-    i -= j; j = len(ft.succ)
+    i -= j; j = len(ft.succ)::Int
     if i <= j return getindex(ft.succ, i) end
-    i -= j; j = len(ft.right)
+    i -= j; j = len(ft.right)::Int
     if i <= j return getindex(ft.right, i) end
     throw(BoundsError())
 end
