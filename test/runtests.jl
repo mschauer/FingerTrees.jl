@@ -201,3 +201,25 @@ end
         end
     end
 end
+
+@testset "assoc" begin
+    for n in (1, 2, 3, 10, 100, 1024)
+        ft = FingerTree(1:n)
+
+        for i in unique((1, max(1, n ÷ 2), n))
+            replacement = -i
+            updated = assoc(ft, replacement, i)
+
+            expected = collect(1:n)
+            expected[i] = replacement
+
+            @test collect(updated) == expected
+            @test collect(ft) == collect(1:n)   # persistence
+            @test length(updated) == n
+        end
+    end
+
+    ft = FingerTree(1:10)
+    @test_throws BoundsError assoc(ft, 0, 0)
+    @test_throws BoundsError assoc(ft, 0, 11)
+end
