@@ -523,9 +523,115 @@ function split(ft::DeepFT{T}, i) where {T}
     throw(BoundsError())
 end
 
-function assoc(ft::FingerTree{T}, a::T, i) where {T}
-    l, _, r = split(ft, i)
-    concat(conjr(l, a), r)
+function _assoc(d::DLeaf{T,N}, value::T, i::Int) where {T,N}
+    for k in 1:N
+        j = len(d.child[k])
+        if i <= j
+            children = ntuple(m -> m == k ? value : d.child[m], Val(N))
+            return DLeaf(children...)
+        end
+        i -= j
+    end
+    throw(BoundsError())
+end
+
+function _assoc(d::DNode{T,N}, value::T, i::Int) where {T,N}
+    for k in 1:N
+        j = len(d.child[k])
+        if i <= j
+            updated = _assoc(d.child[k], value, i)
+            children = ntuple(m -> m == k ? updated : d.child[m], Val(N))
+            return DNode(children...)
+        end
+        i -= j
+    end
+    throw(BoundsError())
+end
+
+function _assoc(n::Leaf23{T}, value::T, i::Int) where {T}
+    c = n.c
+
+    j = len(n.a)
+    if i <= j
+        return isnothing(c) ? Leaf23(value, n.b) : Leaf23(value, n.b, something(c))
+    end
+    i -= j
+
+    j = len(n.b)
+    if i <= j
+        return isnothing(c) ? Leaf23(n.a, value) : Leaf23(n.a, value, something(c))
+    end
+
+    if !isnothing(c)
+        i -= j
+        i <= len(something(c)) && return Leaf23(n.a, n.b, value)
+    end
+
+    throw(BoundsError())
+end
+
+function _assoc(n::Node23{T}, value::T, i::Int) where {T}
+    c = n.c
+
+    j = len(n.a)
+    if i <= j
+        updated = _assoc(n.a, value, i)
+        return isnothing(c) ? Node23(updated, n.b) : Node23(updated, n.b, something(c))
+    end
+    i -= j
+
+    j = len(n.b)
+    if i <= j
+        updated = _assoc(n.b, value, i)
+        return isnothing(c) ? Node23(n.a, updated) : Node23(n.a, updated, something(c))
+    end
+
+    if !isnothing(c)
+        i -= j
+        child = something(c)
+        if i <= len(child)
+            return Node23(n.a, n.b, _assoc(child, value, i))
+        end
+    end
+
+    throw(BoundsError())
+end
+
+_assoc(ft::EmptyFT{T}, ::T, i::Int) where {T} = throw(BoundsError(ft, i))
+
+function _assoc(ft::SingleFT{T}, value::T, i::Int) where {T}
+    child = ft.a
+    if child isa Tree23{T}
+        return SingleFT(_assoc(child::Tree23Rep{T}, value, i))
+    end
+    return SingleFT(value)
+end
+
+function _assoc(ft::DeepFT{T}, value::T, i::Int) where {T}
+    j = len(ft.left)
+    if i <= j
+        return DeepFT(_assoc(ft.left, value, i), ft.succ, ft.right)
+    end
+    i -= j
+
+    j = len(ft.succ)
+    if i <= j
+        return DeepFT(ft.left, _assoc(ft.succ, value, i), ft.right)
+    end
+    i -= j
+
+    j = len(ft.right)
+    if i <= j
+        return DeepFT(ft.left, ft.succ, _assoc(ft.right, value, i))
+    end
+
+    throw(BoundsError())
+end
+
+function assoc(ft::FingerTree{T}, value::T, i::Integer) where {T}
+    index = Int(i)
+    1 <= index <= length(ft) || throw(BoundsError(ft, i))
+    _assoc(ft, value, index)
 end
 
 function Base.getindex(ft::FingerTree{T}, range::UnitRange{<:Integer}) where {T}
