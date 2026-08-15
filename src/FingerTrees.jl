@@ -183,12 +183,12 @@ len(n::NTuple{N, Leaf23}) where {N} = mapreduce(len, +, n)::Int
 len(_::Tuple{}) = 0
 len(n::NTuple{N, Node23}) where {N} = mapreduce(len, +, n)::Int
 
-len(n::Tree23) = n.len
-len(digit::DigitFT) = digit.len
-len(_::EmptyFT) = 0
+len(n::Tree23)::Int = n.len
+len(digit::DigitFT)::Int = digit.len
+len(_::EmptyFT)::Int = 0
 
-len(deep::DeepFT) = deep.len
-len(n::SingleFT) = len(n.a)
+len(deep::DeepFT)::Int = deep.len
+len(n::SingleFT)::Int = len(n.a)::Int
 length(ft::FingerTree) = len(ft)
 
 isempty(_::EmptyFT) = true
@@ -253,7 +253,7 @@ splitr(digit::DigitFT2{T}) where {T} = DigitFT(digit.child[1]), digit.child[end]
 splitr(digit::DigitFT3{T}) where {T} = DigitFT(digit.child[1:end-1]...), digit.child[end]
 splitr(digit::DigitFT4{T}) where {T} = DigitFT(digit.child[1:end-1]...), digit.child[end]
 
-function Base.getindex(d::DigitFT, i::Int)
+function Base.getindex(d::DigitFT{T}, i::Int)::T where {T}
     for k in 1:width(d)
         j = len(d.child[k])
         if i <= j return getindex(d.child[k], i) end
@@ -261,7 +261,7 @@ function Base.getindex(d::DigitFT, i::Int)
     end
     throw(BoundsError())
 end
-function Base.getindex(n::Tree23, i::Int)
+function Base.getindex(n::Tree23{T}, i::Int)::T where {T}
     j = len(n.a)
     i <= j && return getindex(n.a, i)
     i -= j; j = len(n.b)
@@ -273,9 +273,13 @@ function Base.getindex(n::Tree23, i::Int)
     throw(BoundsError())
 end
 
-Base.getindex(::EmptyFT, i) = throw(BoundsError())
-Base.getindex(ft::SingleFT, i) = getindex(ft.a, i)
-function Base.getindex(ft::DeepFT, i)
+function Base.getindex(::EmptyFT{T}, i)::T where {T}
+    throw(BoundsError())
+end
+function Base.getindex(ft::SingleFT{T}, i)::T where {T}
+    getindex(ft.a, i)
+end
+function Base.getindex(ft::DeepFT{T}, i::Int)::T where {T}
     j = len(ft.left)
     if i <= j return getindex(ft.left, i) end
     i -= j; j = len(ft.succ)
