@@ -197,16 +197,16 @@ Base.IteratorSize(::Type{<:FingerTree}) = Base.HasLength()
 # generalize this beyond element counts.
 
 len(a) = 1
-len(n::NTuple{N,Leaf23}) where {N} = mapreduce(len, +, n)::Int
+len(n::NTuple{N,Leaf23}) where {N} = mapreduce(len, +, n)
 len(_::Tuple{}) = 0
-len(n::NTuple{N,Node23}) where {N} = mapreduce(len, +, n)::Int
+len(n::NTuple{N,Node23}) where {N} = mapreduce(len, +, n)
 
-len(n::Tree23)::Int = n.len
-len(digit::DigitFT)::Int = digit.len
-len(_::EmptyFT)::Int = 0
+len(n::Tree23) = n.len
+len(digit::DigitFT) = digit.len
+len(_::EmptyFT) = 0
 
-len(deep::DeepFT)::Int = deep.len
-len(n::SingleFT)::Int = len(n.a)::Int
+len(deep::DeepFT) = deep.len
+len(n::SingleFT) = len(n.a)
 length(ft::FingerTree) = len(ft)
 
 isempty(_::EmptyFT) = true
@@ -226,7 +226,7 @@ function Base.:(==)(left::FingerTree, right::FingerTree)
     all(a == b for (a, b) in zip(left, right))
 end
 
-width(digit::DigitFT{T,N}) where {T,N} = N::Int
+width(digit::DigitFT{T,N}) where {T,N} = N
 width(n::Tree23) = isnothing(n.c) ? 2 : 3
 
 # ---------------------------------------------------------------------------
@@ -296,7 +296,7 @@ splitr(digit::DigitFT4{T}) where {T} = DigitFT(digit.child[1:end-1]...), digit.c
 
 function Base.getindex(d::DigitFT{T}, i::Int)::T where {T}
     for k in 1:width(d)
-        j = len(d.child[k])::Int
+        j = len(d.child[k])
         if i <= j
             return getindex(d.child[k], i)
         end
@@ -305,12 +305,12 @@ function Base.getindex(d::DigitFT{T}, i::Int)::T where {T}
     throw(BoundsError())
 end
 function Base.getindex(n::Tree23{T}, i::Int)::T where {T}
-    j = len(n.a)::Int
+    j = len(n.a)
     i <= j && return getindex(n.a, i)
-    i -= j; j = len(n.b)::Int
+    i -= j; j = len(n.b)
     i <= j && return getindex(n.b, i)
     if !isnothing(n.c)
-        i -= j; j = len(something(n.c))::Int
+        i -= j; j = len(something(n.c))
         i <= j && return getindex(something(n.c), i)
     end
     throw(BoundsError())
@@ -323,15 +323,15 @@ function Base.getindex(ft::SingleFT{T}, i::Int)::T where {T}
     getindex(ft.a, i)
 end
 function Base.getindex(ft::DeepFT{T}, i::Int)::T where {T}
-    j = len(ft.left)::Int
+    j = len(ft.left)
     i <= j && return getindex(ft.left, i)
     i -= j
 
-    j = len(ft.succ)::Int
+    j = len(ft.succ)
     i <= j && return getindex(ft.succ, i)
     i -= j
 
-    j = len(ft.right)::Int
+    j = len(ft.right)
     i <= j && return getindex(ft.right, i)
     throw(BoundsError())
 end
