@@ -90,6 +90,17 @@ struct DNode{T,N} <: DigitFT{T,N}
     end
 end
 
+const DigitFTRep{T} = Union{
+    DLeaf{T,1},
+    DLeaf{T,2},
+    DLeaf{T,3},
+    DLeaf{T,4},
+    DNode{T,1},
+    DNode{T,2},
+    DNode{T,3},
+    DNode{T,4},
+}
+
 const DigitFT1{T} = DigitFT{T,1}
 const DigitFT2{T} = DigitFT{T,2}
 const DigitFT3{T} = DigitFT{T,3}
@@ -125,9 +136,9 @@ end
 
 
 struct DeepFT{T} <: FingerTree{T}
-    left::DigitFT{T}
+    left::DigitFTRep{T}
     succ::Union{EmptyFT{T}, SingleFT{T}, DeepFT{T}} # is infact a FingerTree{Node{T}}
-    right::DigitFT{T}
+    right::DigitFTRep{T}
     len::Int
     depth::Int
     function DeepFT(l::DigitFT{T,N}, s::FingerTree{T}, r::DigitFT{T,M}) where {T,N,M}
