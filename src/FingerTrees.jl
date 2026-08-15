@@ -126,7 +126,7 @@ end
 
 struct DeepFT{T} <: FingerTree{T}
     left::DigitFT{T}
-    succ::FingerTree{T} # is infact a FingerTree{Node{T}}
+    succ::Union{EmptyFT{T}, SingleFT{T}, DeepFT{T}} # is infact a FingerTree{Node{T}}
     right::DigitFT{T}
     len::Int
     depth::Int
@@ -148,6 +148,8 @@ struct DeepFT{T} <: FingerTree{T}
         new{T}(l, s, r, len(l) + len(s) + len(r), dep(l))
     end=#
 end
+
+const FingerTreeRep{T} = Union{EmptyFT{T}, SingleFT{T}, DeepFT{T}}
 #=
 DeepFT(l::DigitFT{T}, s::FingerTree{T} , r::DigitFT{T}) where {T} = DeepFT{T}(l, s, r)
 =#
