@@ -1,0 +1,5 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+FingerTrees = "3d24749a-0845-4c16-a2f2-051d7e3c7003"
+FunctionalCollections = "de31a74c-ac4f-5751-b3fd-e18cd04993ca"
