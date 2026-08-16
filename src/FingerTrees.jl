@@ -259,7 +259,9 @@ fingertree(a, b, c, d, e, f, g) = DeepFT(DigitFT(a, b, c, d), DigitFT(e, f, g))
 fingertree(a, b, c, d, e, f, g, h) = DeepFT(DigitFT(a, b, c, d), DigitFT(e, f, g, h))
 
 toftree(d::FingerTree) = d
-toftree(d::DigitFT{T}) where {T} = fingertree(d.child...)
+function toftree(d::DigitFT{T})::FingerTreeRep{T} where {T}
+    fingertree(d.child...)
+end
 toftree(d::Tree23{T}) where {T} = fingertree(astuple(d)...)
 toftree(d::NTuple{1,T}) where {T} = fingertree(d[1])
 toftree(d::NTuple{2,T}) where {T} = fingertree(d[1], d[2])
@@ -507,21 +509,37 @@ end
 
 const NonEmptyFT{T} = Union{SingleFT{T},DeepFT{T}}
 
-deepl(::Nothing, ::EmptyFT{T}, right::DigitFTRep{T}) where {T} = toftree(right)
-function deepl(::Nothing, ft::NonEmptyFT{T}, right::DigitFTRep{T}) where {T}
+_deepl(::Nothing, ::EmptyFT{T}, right::DigitFTRep{T}) where {T} = toftree(right)
+function _deepl(::Nothing, ft::NonEmptyFT{T}, right::DigitFTRep{T}) where {T}
     x, ft2 = splitl(ft)
     DeepFT(digit(x), ft2, right)
 end
-deepl(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
+_deepl(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
     DeepFT(left, ft, right)
 
-deepr(left::DigitFTRep{T}, ::EmptyFT{T}, ::Nothing) where {T} = toftree(left)
-function deepr(left::DigitFTRep{T}, ft::NonEmptyFT{T}, ::Nothing) where {T}
+function deepl(
+    left::DigitFragment{T},
+    middle::FingerTreeRep{T},
+    right::DigitFTRep{T},
+)::FingerTreeRep{T} where {T}
+    _deepl(left, middle, right)
+end
+
+_deepr(left::DigitFTRep{T}, ::EmptyFT{T}, ::Nothing) where {T} = toftree(left)
+function _deepr(left::DigitFTRep{T}, ft::NonEmptyFT{T}, ::Nothing) where {T}
     ft2, x = splitr(ft)
     DeepFT(left, ft2, digit(x))
 end
-deepr(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
+_deepr(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
     DeepFT(left, ft, right)
+
+function deepr(
+    left::DigitFTRep{T},
+    middle::FingerTreeRep{T},
+    right::DigitFragment{T},
+)::FingerTreeRep{T} where {T}
+    _deepr(left, middle, right)
+end
 
 split(ft::EmptyFT, i) = throw(BoundsError(ft, i))
 
