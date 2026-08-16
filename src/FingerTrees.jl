@@ -424,6 +424,12 @@ struct TreeSplit{T}
     right::FingerTreeRep{T}
 end
 
+struct Tree23Split{T}
+    left::DigitFragment{T}
+    value::SplitValue{T}
+    right::DigitFragment{T}
+end
+
 # A split fragment has at most three children.  Represent nonempty fragments
 # immediately as digits and package the result in one concrete return type.
 function split(d::DigitFT{T,1}, i) where {T}
@@ -468,40 +474,40 @@ function split(d::DigitFT{T,4}, i) where {T}
     throw(BoundsError())
 end
 
-function split(n::Leaf23, i)
+function _split23(n::Leaf23{T}, i::Int)::Tree23Split{T} where {T}
     if isnothing(n.c)
         j = len(n.a)
-        i <= j && return nothing, n.a, DigitFT(n.b)
+        i <= j && return Tree23Split{T}(nothing, n.a, DigitFT(n.b))
         i -= j
-        i <= len(n.b) && return DigitFT(n.a), n.b, nothing
+        i <= len(n.b) && return Tree23Split{T}(DigitFT(n.a), n.b, nothing)
     else
         c = something(n.c)
         j = len(n.a)
-        i <= j && return nothing, n.a, DigitFT(n.b, c)
+        i <= j && return Tree23Split{T}(nothing, n.a, DigitFT(n.b, c))
         i -= j
         j = len(n.b)
-        i <= j && return DigitFT(n.a), n.b, DigitFT(c)
+        i <= j && return Tree23Split{T}(DigitFT(n.a), n.b, DigitFT(c))
         i -= j
-        i <= len(c) && return DigitFT(n.a, n.b), c, nothing
+        i <= len(c) && return Tree23Split{T}(DigitFT(n.a, n.b), c, nothing)
     end
     throw(BoundsError())
 end
 
-function split(n::Node23, i)
+function _split23(n::Node23{T}, i::Int)::Tree23Split{T} where {T}
     if isnothing(n.c)
         j = len(n.a)
-        i <= j && return nothing, n.a, DigitFT(n.b)
+        i <= j && return Tree23Split{T}(nothing, n.a, DigitFT(n.b))
         i -= j
-        i <= len(n.b) && return DigitFT(n.a), n.b, nothing
+        i <= len(n.b) && return Tree23Split{T}(DigitFT(n.a), n.b, nothing)
     else
         c = something(n.c)
         j = len(n.a)
-        i <= j && return nothing, n.a, DigitFT(n.b, c)
+        i <= j && return Tree23Split{T}(nothing, n.a, DigitFT(n.b, c))
         i -= j
         j = len(n.b)
-        i <= j && return DigitFT(n.a), n.b, DigitFT(c)
+        i <= j && return Tree23Split{T}(DigitFT(n.a), n.b, DigitFT(c))
         i -= j
-        i <= len(c) && return DigitFT(n.a, n.b), c, nothing
+        i <= len(c) && return Tree23Split{T}(DigitFT(n.a, n.b), c, nothing)
     end
     throw(BoundsError())
 end
@@ -573,8 +579,10 @@ function _split(ft::DeepFT{T}, i::Int)::TreeSplit{T} where {T}
         xs = s.value
         mr = s.right
         i -= len(ml)
-        l, x, r = isa(xs, T) ? (nothing, xs, nothing) : split(xs, i)
-        return TreeSplit{T}(deepr(ft.left, ml, l), x, deepl(r, mr, ft.right))
+        ns = isa(xs, T) ? Tree23Split{T}(nothing, xs, nothing) : _split23(xs, i)
+        left = deepr(ft.left, ml, ns.left)
+        right = deepl(ns.right, mr, ft.right)
+        return TreeSplit{T}(left, ns.value, right)
     end
     i -= j
     j = len(ft.right)
