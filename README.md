@@ -48,4 +48,4 @@ using Pkg
 Pkg.test()
 ```
 
-Focused performance benchmarks live in `benchmark/`.
+Performance benchmarks live in `benchmark/`.
