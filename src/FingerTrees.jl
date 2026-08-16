@@ -418,6 +418,12 @@ struct DigitSplit{T}
     right::DigitFragment{T}
 end
 
+struct TreeSplit{T}
+    left::FingerTreeRep{T}
+    value::SplitValue{T}
+    right::FingerTreeRep{T}
+end
+
 # A split fragment has at most three children.  Represent nonempty fragments
 # immediately as digits and package the result in one concrete return type.
 function split(d::DigitFT{T,1}, i) where {T}
@@ -541,38 +547,48 @@ function deepr(
     _deepr(left, middle, right)
 end
 
-split(ft::EmptyFT, i) = throw(BoundsError(ft, i))
-
-function split(ft::SingleFT{K}, i) where {K}
-    1 <= i <= length(ft) || throw(BoundsError(ft, i))
-    e = EmptyFT{K}()
-    return e, ft.a, e
+function _split(ft::EmptyFT{T}, i::Int)::TreeSplit{T} where {T}
+    throw(BoundsError(ft, i))
 end
 
-function split(ft::DeepFT{T}, i) where {T}
+function _split(ft::SingleFT{T}, i::Int)::TreeSplit{T} where {T}
+    1 <= i <= length(ft) || throw(BoundsError(ft, i))
+    empty = EmptyFT{T}()
+    TreeSplit{T}(empty, ft.a, empty)
+end
+
+function _split(ft::DeepFT{T}, i::Int)::TreeSplit{T} where {T}
     1 <= i <= length(ft) || throw(BoundsError(ft, i))
     j = len(ft.left)
     if i <= j
         s = split(ft.left, i)
         left = isnothing(s.left) ? EmptyFT{T}() : toftree(something(s.left))
-        return left, s.value, deepl(s.right, ft.succ, ft.right)
+        return TreeSplit{T}(left, s.value, deepl(s.right, ft.succ, ft.right))
     end
     i -= j
     j = len(ft.succ)
     if i <= j
-        ml, xs, mr = split(ft.succ, i)
+        s = _split(ft.succ, i)
+        ml = s.left
+        xs = s.value
+        mr = s.right
         i -= len(ml)
         l, x, r = isa(xs, T) ? (nothing, xs, nothing) : split(xs, i)
-        return deepr(ft.left, ml, l), x, deepl(r, mr, ft.right)
+        return TreeSplit{T}(deepr(ft.left, ml, l), x, deepl(r, mr, ft.right))
     end
     i -= j
     j = len(ft.right)
     if i <= j
         s = split(ft.right, i)
         right = isnothing(s.right) ? EmptyFT{T}() : toftree(something(s.right))
-        return deepr(ft.left, ft.succ, s.left), s.value, right
+        return TreeSplit{T}(deepr(ft.left, ft.succ, s.left), s.value, right)
     end
     throw(BoundsError())
+end
+
+function split(ft::FingerTree{T}, i::Integer) where {T}
+    s = _split(ft, Int(i))
+    s.left, s.value, s.right
 end
 
 function _assoc(d::DLeaf{T,N}, value::T, i::Int) where {T,N}
