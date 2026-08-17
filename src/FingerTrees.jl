@@ -10,6 +10,13 @@ export assoc, concat, conjl, conjr, split, splitl, splitr
 
 abstract type FingerTree{T} end
 abstract type Tree23{T} end
+
+# Internal algorithms preserve the structural invariants by construction.  The
+# trusted tag lets them bypass repeated balance checks while direct constructors
+# remain checked.
+struct _TrustedConstruction end
+const _TRUSTED = _TrustedConstruction()
+
 mutable struct Leaf23{T} <: Tree23{T}
     const a::T
     const b::T
@@ -24,6 +31,10 @@ mutable struct Leaf23{T} <: Tree23{T}
         dep(a) == dep(b) == dep(c) || throw(ArgumentError("cannot construct an uneven 3-leaf"))
         new{T}(a, b, c, len(a) + len(b) + len(c), dep(a) + 1)
     end
+    Leaf23(::_TrustedConstruction, a::T, b::T) where {T} =
+        new{T}(a, b, nothing, len(a) + len(b), dep(a) + 1)
+    Leaf23(::_TrustedConstruction, a::T, b::T, c::T) where {T} =
+        new{T}(a, b, c, len(a) + len(b) + len(c), dep(a) + 1)
 end
 
 struct Node23{T} <: Tree23{T}
@@ -40,6 +51,10 @@ struct Node23{T} <: Tree23{T}
         dep(a) == dep(b) == dep(c) || throw(ArgumentError("cannot construct an uneven 3-node"))
         new{T}(a, b, c, len(a) + len(b) + len(c), dep(a) + 1)
     end
+    Node23(::_TrustedConstruction, a::Tree23{T}, b::Tree23{T}) where {T} =
+        new{T}(a, b, nothing, len(a) + len(b), dep(a) + 1)
+    Node23(::_TrustedConstruction, a::Tree23{T}, b::Tree23{T}, c::Tree23{T}) where {T} =
+        new{T}(a, b, c, len(a) + len(b) + len(c), dep(a) + 1)
 end
 
 const Tree23Rep{T} = Union{Leaf23{T},Node23{T}}
@@ -48,6 +63,12 @@ Tree23(a,b,c) = Leaf23(a,b,c)
 Tree23(a,b) = Leaf23(a,b)
 Tree23(a::Tree23{T},b::Tree23{T},c::Tree23{T}) where {T} = Node23(a,b,c)
 Tree23(a::Tree23{T},b::Tree23{T}) where {T} = Node23(a,b)
+
+_unchecked_tree23(a, b) = Leaf23(_TRUSTED, a, b)
+_unchecked_tree23(a, b, c) = Leaf23(_TRUSTED, a, b, c)
+_unchecked_tree23(a::Tree23{T}, b::Tree23{T}) where {T} = Node23(_TRUSTED, a, b)
+_unchecked_tree23(a::Tree23{T}, b::Tree23{T}, c::Tree23{T}) where {T} =
+    Node23(_TRUSTED, a, b, c)
 
 abstract type DigitFT{T,N} end
 
@@ -87,6 +108,14 @@ mutable struct DNode{T,N} <: DigitFT{T,N}
             throw(ArgumentError("cannot construct an uneven digit"))
         new{T,4}((a, b, c, d), +(len(a), len(b), len(c), len(d)), dep(a))
     end
+    DNode(::_TrustedConstruction, a::Tree23{T}) where {T} =
+        new{T,1}((a,), len(a), dep(a))
+    DNode(::_TrustedConstruction, a::Tree23{T}, b::Tree23{T}) where {T} =
+        new{T,2}((a, b), len(a) + len(b), dep(a))
+    DNode(::_TrustedConstruction, a::Tree23{T}, b::Tree23{T}, c::Tree23{T}) where {T} =
+        new{T,3}((a, b, c), len(a) + len(b) + len(c), dep(a))
+    DNode(::_TrustedConstruction, a::Tree23{T}, b::Tree23{T}, c::Tree23{T}, d::Tree23{T}) where {T} =
+        new{T,4}((a, b, c, d), +(len(a), len(b), len(c), len(d)), dep(a))
 end
 
 const DigitFTRep{T} = Union{
@@ -114,15 +143,25 @@ DigitFT(a::Tree23{T},b::Tree23{T}) where {T} = DNode(a,b)
 DigitFT(a::Tree23{T},b::Tree23{T},c::Tree23{T}) where {T} = DNode(a,b,c)
 DigitFT(a::Tree23{T},b::Tree23{T},c::Tree23{T},d::Tree23{T}) where {T} = DNode(a,b,c,d)
 
+_unchecked_digit(a) = DLeaf(a)
+_unchecked_digit(a, b) = DLeaf(a, b)
+_unchecked_digit(a, b, c) = DLeaf(a, b, c)
+_unchecked_digit(a, b, c, d) = DLeaf(a, b, c, d)
+_unchecked_digit(a::Tree23{T}) where {T} = DNode(_TRUSTED, a)
+_unchecked_digit(a::Tree23{T}, b::Tree23{T}) where {T} = DNode(_TRUSTED, a, b)
+_unchecked_digit(a::Tree23{T}, b::Tree23{T}, c::Tree23{T}) where {T} = DNode(_TRUSTED, a, b, c)
+_unchecked_digit(a::Tree23{T}, b::Tree23{T}, c::Tree23{T}, d::Tree23{T}) where {T} =
+    DNode(_TRUSTED, a, b, c, d)
+
 function digit(n::Tree23{T}) where T
     if isnothing(n.c)
-        DigitFT(n.a, n.b)
+        _unchecked_digit(n.a, n.b)
     else
-        DigitFT(n.a, n.b, something(n.c))
+        _unchecked_digit(n.a, n.b, something(n.c))
     end
 end
-digit(t::NTuple{N,T}) where {N, T} = DigitFT(t...)
-digit(t::T) where {T} = DigitFT(t)
+digit(t::NTuple{N,T}) where {N, T} = _unchecked_digit(t...)
+digit(t::T) where {T} = _unchecked_digit(t)
 
 struct EmptyFT{T} <: FingerTree{T}
 end
@@ -145,6 +184,8 @@ struct DeepFT{T} <: FingerTree{T}
         balanced || throw(ArgumentError("cannot construct an uneven finger tree"))
         new{T}(l, s, r, len(l) + len(s) + len(r), dep(l))
     end
+    DeepFT(::_TrustedConstruction, l::DigitFT{T,N}, s::FingerTree{T}, r::DigitFT{T,M}) where {T,N,M} =
+        new{T}(l, s, r, len(l) + len(s) + len(r), dep(l))
 end
 
 const FingerTreeRep{T} = Union{EmptyFT{T}, SingleFT{T}, DeepFT{T}}
@@ -183,6 +224,18 @@ DeepFT(l::T, r::T) where {T} = DeepFT(DigitFT(l), EmptyFT{T}(), DigitFT(r))
 DeepFT(l::Tree23{T}, r::Tree23{T}) where {T} = DeepFT(DigitFT(l), EmptyFT{T}(), DigitFT(r))
 DeepFT(l::DigitFT{T}, r::DigitFT{T}) where {T} = DeepFT(l, EmptyFT{T}(), r)
 
+_unchecked_deep(l::DigitFT{T}, s::FingerTree{T}, r::DigitFT{T}) where {T} =
+    DeepFT(_TRUSTED, l, s, r)
+_unchecked_deep(l::T, s::FingerTree{T}, r::T) where {T} =
+    _unchecked_deep(_unchecked_digit(l), s, _unchecked_digit(r))
+_unchecked_deep(l::Tree23{T}, s::FingerTree{T}, r::Tree23{T}) where {T} =
+    _unchecked_deep(_unchecked_digit(l), s, _unchecked_digit(r))
+_unchecked_deep(l::T, r::T) where {T} =
+    _unchecked_deep(_unchecked_digit(l), EmptyFT{T}(), _unchecked_digit(r))
+_unchecked_deep(l::Tree23{T}, r::Tree23{T}) where {T} =
+    _unchecked_deep(_unchecked_digit(l), EmptyFT{T}(), _unchecked_digit(r))
+_unchecked_deep(l::DigitFT{T}, r::DigitFT{T}) where {T} =
+    _unchecked_deep(l, EmptyFT{T}(), r)
 
 # Depth is cached as data rather than encoded recursively in the Julia type.
 
@@ -261,13 +314,13 @@ FingerTree(iterable) = FingerTree(eltype(iterable), iterable)
 
 fingertree(_::Tuple{}) = throw(ArgumentError("cannot create an untyped empty finger tree"))
 fingertree(a) = SingleFT(a)
-fingertree(a, b) = DeepFT(a, b)
-fingertree(a, b, c) = DeepFT(DigitFT(a, b), DigitFT(c))
-fingertree(a, b, c, d) = DeepFT(DigitFT(a, b), DigitFT(c, d))
-fingertree(a, b, c, d, e) = DeepFT(DigitFT(a, b, c), DigitFT(d, e))
-fingertree(a, b, c, d, e, f) = DeepFT(DigitFT(a, b, c), DigitFT(d, e, f))
-fingertree(a, b, c, d, e, f, g) = DeepFT(DigitFT(a, b, c, d), DigitFT(e, f, g))
-fingertree(a, b, c, d, e, f, g, h) = DeepFT(DigitFT(a, b, c, d), DigitFT(e, f, g, h))
+fingertree(a, b) = _unchecked_deep(a, b)
+fingertree(a, b, c) = _unchecked_deep(_unchecked_digit(a, b), _unchecked_digit(c))
+fingertree(a, b, c, d) = _unchecked_deep(_unchecked_digit(a, b), _unchecked_digit(c, d))
+fingertree(a, b, c, d, e) = _unchecked_deep(_unchecked_digit(a, b, c), _unchecked_digit(d, e))
+fingertree(a, b, c, d, e, f) = _unchecked_deep(_unchecked_digit(a, b, c), _unchecked_digit(d, e, f))
+fingertree(a, b, c, d, e, f, g) = _unchecked_deep(_unchecked_digit(a, b, c, d), _unchecked_digit(e, f, g))
+fingertree(a, b, c, d, e, f, g, h) = _unchecked_deep(_unchecked_digit(a, b, c, d), _unchecked_digit(e, f, g, h))
 
 toftree(d::FingerTree) = d
 function toftree(d::DigitFT{T})::FingerTreeRep{T} where {T}
@@ -286,22 +339,22 @@ astuple(d::DigitFT) = d.child
 # End operations
 # ---------------------------------------------------------------------------
 
-conjl(a, digit::DigitFT1{T}) where {T} = DigitFT(a, digit.child[1])
-conjl(a, digit::DigitFT2{T}) where {T} = DigitFT(a, digit.child[1], digit.child[2])
-conjl(a, digit::DigitFT3{T}) where {T} = DigitFT(a, digit.child...)
+conjl(a, digit::DigitFT1{T}) where {T} = _unchecked_digit(a, digit.child[1])
+conjl(a, digit::DigitFT2{T}) where {T} = _unchecked_digit(a, digit.child[1], digit.child[2])
+conjl(a, digit::DigitFT3{T}) where {T} = _unchecked_digit(a, digit.child...)
 
-conjr(digit::DigitFT1{T}, a) where {T} = DigitFT(digit.child[1], a)
-conjr(digit::DigitFT2{T}, a) where {T} = DigitFT(digit.child[1], digit.child[2], a)
-conjr(digit::DigitFT3{T}, a) where {T} = DigitFT(digit.child..., a)
+conjr(digit::DigitFT1{T}, a) where {T} = _unchecked_digit(digit.child[1], a)
+conjr(digit::DigitFT2{T}, a) where {T} = _unchecked_digit(digit.child[1], digit.child[2], a)
+conjr(digit::DigitFT3{T}, a) where {T} = _unchecked_digit(digit.child..., a)
 
 
-splitl(digit::DigitFT2{T}) where {T} = digit.child[1], DigitFT(digit.child[2])
-splitl(digit::DigitFT3{T}) where {T} = digit.child[1], DigitFT(digit.child[2:end]...)
-splitl(digit::DigitFT4{T}) where {T} = digit.child[1], DigitFT(digit.child[2:end]...)
+splitl(digit::DigitFT2{T}) where {T} = digit.child[1], _unchecked_digit(digit.child[2])
+splitl(digit::DigitFT3{T}) where {T} = digit.child[1], _unchecked_digit(digit.child[2:end]...)
+splitl(digit::DigitFT4{T}) where {T} = digit.child[1], _unchecked_digit(digit.child[2:end]...)
 
-splitr(digit::DigitFT2{T}) where {T} = DigitFT(digit.child[1]), digit.child[end]
-splitr(digit::DigitFT3{T}) where {T} = DigitFT(digit.child[1:end-1]...), digit.child[end]
-splitr(digit::DigitFT4{T}) where {T} = DigitFT(digit.child[1:end-1]...), digit.child[end]
+splitr(digit::DigitFT2{T}) where {T} = _unchecked_digit(digit.child[1]), digit.child[end]
+splitr(digit::DigitFT3{T}) where {T} = _unchecked_digit(digit.child[1:end-1]...), digit.child[end]
+splitr(digit::DigitFT4{T}) where {T} = _unchecked_digit(digit.child[1:end-1]...), digit.child[end]
 
 # ---------------------------------------------------------------------------
 # Indexing
@@ -357,8 +410,8 @@ conjr(_::EmptyFT{T}, a::T) where {T} = SingleFT(a)
 conjl(a::Tree23{T}, _::EmptyFT{T}) where {T} = SingleFT(a)
 conjr(_::EmptyFT{T}, a::Tree23{T}) where {T} = SingleFT(a)
 
-conjl(a, single::SingleFT{K}) where {K} = DeepFT(a, EmptyFT{K}(), single.a)
-conjr(single::SingleFT{K}, a) where {K} = DeepFT(single.a, EmptyFT{K}(), a)
+conjl(a, single::SingleFT{K}) where {K} = _unchecked_deep(a, EmptyFT{K}(), single.a)
+conjr(single::SingleFT{K}, a) where {K} = _unchecked_deep(single.a, EmptyFT{K}(), a)
 
 _viewl(ft::EmptyFT{T}) where {T} = throw(BoundsError(ft))
 _viewr(ft::EmptyFT{T}) where {T} = throw(BoundsError(ft))
@@ -371,47 +424,47 @@ function _viewr(single::SingleFT{T})::RightView{T} where {T}
 end
 function conjl(a, ft::DeepFT{T}) where {T}
     if width(ft.left) < 4
-        DeepFT(conjl(a, ft.left), ft.succ, ft.right)
+        _unchecked_deep(conjl(a, ft.left), ft.succ, ft.right)
     else
-        f = Tree23(ft.left.child[2], ft.left.child[3], ft.left.child[4])
-        DeepFT(DigitFT(a, ft.left.child[1]), conjl(f, ft.succ), ft.right)
+        f = _unchecked_tree23(ft.left.child[2], ft.left.child[3], ft.left.child[4])
+        _unchecked_deep(_unchecked_digit(a, ft.left.child[1]), conjl(f, ft.succ), ft.right)
     end
 end
 
 function conjr(ft::DeepFT, a)
     if width(ft.right) < 4
-        DeepFT(ft.left, ft.succ, conjr(ft.right, a))
+        _unchecked_deep(ft.left, ft.succ, conjr(ft.right, a))
     else
-        f = Tree23(ft.right.child[1:3]...)
-        DeepFT(ft.left, conjr(ft.succ, f), DigitFT(ft.right.child[4], a))
+        f = _unchecked_tree23(ft.right.child[1:3]...)
+        _unchecked_deep(ft.left, conjr(ft.succ, f), _unchecked_digit(ft.right.child[4], a))
     end
 end
 
 function _viewl(ft::DeepFT{T})::LeftView{T} where {T}
     if width(ft.left) > 1
         a, as = splitl(ft.left)
-        return LeftView{T}(a, DeepFT(as, ft.succ, ft.right))
+        return LeftView{T}(a, _unchecked_deep(as, ft.succ, ft.right))
     else
         a = ft.left.child[1]
         if isempty(ft.succ)
             return LeftView{T}(a, toftree(ft.right))
         else
             s = _viewl(ft.succ)
-            return LeftView{T}(a, DeepFT(digit(s.value), s.rest, ft.right))
+            return LeftView{T}(a, _unchecked_deep(digit(s.value), s.rest, ft.right))
         end
     end
 end
 function _viewr(ft::DeepFT{T})::RightView{T} where {T}
     if width(ft.right) > 1
         as, a = splitr(ft.right)
-        return RightView{T}(DeepFT(ft.left, ft.succ, as), a)
+        return RightView{T}(_unchecked_deep(ft.left, ft.succ, as), a)
     else
         a = ft.right.child[1]
         if isempty(ft.succ)
             return RightView{T}(toftree(ft.left), a)
         else
             s = _viewr(ft.succ)
-            return RightView{T}(DeepFT(ft.left, s.rest, digit(s.value)), a)
+            return RightView{T}(_unchecked_deep(ft.left, s.rest, digit(s.value)), a)
         end
     end
 end
@@ -461,54 +514,54 @@ end
 function split(d::DigitFT{T,2}, i) where {T}
     a, b = d.child
     j = len(a)
-    i <= j && return DigitSplit{T}(nothing, a, DigitFT(b))
+    i <= j && return DigitSplit{T}(nothing, a, _unchecked_digit(b))
     i -= j
-    i <= len(b) && return DigitSplit{T}(DigitFT(a), b, nothing)
+    i <= len(b) && return DigitSplit{T}(_unchecked_digit(a), b, nothing)
     throw(BoundsError())
 end
 
 function split(d::DigitFT{T,3}, i) where {T}
     a, b, c = d.child
     j = len(a)
-    i <= j && return DigitSplit{T}(nothing, a, DigitFT(b, c))
+    i <= j && return DigitSplit{T}(nothing, a, _unchecked_digit(b, c))
     i -= j
     j = len(b)
-    i <= j && return DigitSplit{T}(DigitFT(a), b, DigitFT(c))
+    i <= j && return DigitSplit{T}(_unchecked_digit(a), b, _unchecked_digit(c))
     i -= j
-    i <= len(c) && return DigitSplit{T}(DigitFT(a, b), c, nothing)
+    i <= len(c) && return DigitSplit{T}(_unchecked_digit(a, b), c, nothing)
     throw(BoundsError())
 end
 
 function split(d::DigitFT{T,4}, i) where {T}
     a, b, c, e = d.child
     j = len(a)
-    i <= j && return DigitSplit{T}(nothing, a, DigitFT(b, c, e))
+    i <= j && return DigitSplit{T}(nothing, a, _unchecked_digit(b, c, e))
     i -= j
     j = len(b)
-    i <= j && return DigitSplit{T}(DigitFT(a), b, DigitFT(c, e))
+    i <= j && return DigitSplit{T}(_unchecked_digit(a), b, _unchecked_digit(c, e))
     i -= j
     j = len(c)
-    i <= j && return DigitSplit{T}(DigitFT(a, b), c, DigitFT(e))
+    i <= j && return DigitSplit{T}(_unchecked_digit(a, b), c, _unchecked_digit(e))
     i -= j
-    i <= len(e) && return DigitSplit{T}(DigitFT(a, b, c), e, nothing)
+    i <= len(e) && return DigitSplit{T}(_unchecked_digit(a, b, c), e, nothing)
     throw(BoundsError())
 end
 
 function _split23(n::Leaf23{T}, i::Int)::Tree23Split{T} where {T}
     if isnothing(n.c)
         j = len(n.a)
-        i <= j && return Tree23Split{T}(nothing, n.a, DigitFT(n.b))
+        i <= j && return Tree23Split{T}(nothing, n.a, _unchecked_digit(n.b))
         i -= j
-        i <= len(n.b) && return Tree23Split{T}(DigitFT(n.a), n.b, nothing)
+        i <= len(n.b) && return Tree23Split{T}(_unchecked_digit(n.a), n.b, nothing)
     else
         c = something(n.c)
         j = len(n.a)
-        i <= j && return Tree23Split{T}(nothing, n.a, DigitFT(n.b, c))
+        i <= j && return Tree23Split{T}(nothing, n.a, _unchecked_digit(n.b, c))
         i -= j
         j = len(n.b)
-        i <= j && return Tree23Split{T}(DigitFT(n.a), n.b, DigitFT(c))
+        i <= j && return Tree23Split{T}(_unchecked_digit(n.a), n.b, _unchecked_digit(c))
         i -= j
-        i <= len(c) && return Tree23Split{T}(DigitFT(n.a, n.b), c, nothing)
+        i <= len(c) && return Tree23Split{T}(_unchecked_digit(n.a, n.b), c, nothing)
     end
     throw(BoundsError())
 end
@@ -516,18 +569,18 @@ end
 function _split23(n::Node23{T}, i::Int)::Tree23Split{T} where {T}
     if isnothing(n.c)
         j = len(n.a)
-        i <= j && return Tree23Split{T}(nothing, n.a, DigitFT(n.b))
+        i <= j && return Tree23Split{T}(nothing, n.a, _unchecked_digit(n.b))
         i -= j
-        i <= len(n.b) && return Tree23Split{T}(DigitFT(n.a), n.b, nothing)
+        i <= len(n.b) && return Tree23Split{T}(_unchecked_digit(n.a), n.b, nothing)
     else
         c = something(n.c)
         j = len(n.a)
-        i <= j && return Tree23Split{T}(nothing, n.a, DigitFT(n.b, c))
+        i <= j && return Tree23Split{T}(nothing, n.a, _unchecked_digit(n.b, c))
         i -= j
         j = len(n.b)
-        i <= j && return Tree23Split{T}(DigitFT(n.a), n.b, DigitFT(c))
+        i <= j && return Tree23Split{T}(_unchecked_digit(n.a), n.b, _unchecked_digit(c))
         i -= j
-        i <= len(c) && return Tree23Split{T}(DigitFT(n.a, n.b), c, nothing)
+        i <= len(c) && return Tree23Split{T}(_unchecked_digit(n.a, n.b), c, nothing)
     end
     throw(BoundsError())
 end
@@ -544,10 +597,10 @@ const NonEmptyFT{T} = Union{SingleFT{T},DeepFT{T}}
 _deepl(::Nothing, ::EmptyFT{T}, right::DigitFTRep{T}) where {T} = toftree(right)
 function _deepl(::Nothing, ft::NonEmptyFT{T}, right::DigitFTRep{T}) where {T}
     s = _viewl(ft)
-    DeepFT(digit(s.value), s.rest, right)
+    _unchecked_deep(digit(s.value), s.rest, right)
 end
 _deepl(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
-    DeepFT(left, ft, right)
+    _unchecked_deep(left, ft, right)
 
 function deepl(
     left::DigitFragment{T},
@@ -560,10 +613,10 @@ end
 _deepr(left::DigitFTRep{T}, ::EmptyFT{T}, ::Nothing) where {T} = toftree(left)
 function _deepr(left::DigitFTRep{T}, ft::NonEmptyFT{T}, ::Nothing) where {T}
     s = _viewr(ft)
-    DeepFT(left, s.rest, digit(s.value))
+    _unchecked_deep(left, s.rest, digit(s.value))
 end
 _deepr(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
-    DeepFT(left, ft, right)
+    _unchecked_deep(left, ft, right)
 
 function deepr(
     left::DigitFTRep{T},
@@ -637,7 +690,7 @@ function _assoc(d::DNode{T,N}, value::T, i::Int) where {T,N}
         if i <= j
             updated = _assoc(d.child[k], value, i)
             children = ntuple(m -> m == k ? updated : d.child[m], Val(N))
-            return DNode(children...)
+            return _unchecked_digit(children...)
         end
         i -= j
     end
@@ -649,18 +702,18 @@ function _assoc(n::Leaf23{T}, value::T, i::Int) where {T}
 
     j = len(n.a)
     if i <= j
-        return isnothing(c) ? Leaf23(value, n.b) : Leaf23(value, n.b, something(c))
+        return isnothing(c) ? _unchecked_tree23(value, n.b) : _unchecked_tree23(value, n.b, something(c))
     end
     i -= j
 
     j = len(n.b)
     if i <= j
-        return isnothing(c) ? Leaf23(n.a, value) : Leaf23(n.a, value, something(c))
+        return isnothing(c) ? _unchecked_tree23(n.a, value) : _unchecked_tree23(n.a, value, something(c))
     end
 
     if !isnothing(c)
         i -= j
-        i <= len(something(c)) && return Leaf23(n.a, n.b, value)
+        i <= len(something(c)) && return _unchecked_tree23(n.a, n.b, value)
     end
 
     throw(BoundsError())
@@ -672,21 +725,21 @@ function _assoc(n::Node23{T}, value::T, i::Int) where {T}
     j = len(n.a)
     if i <= j
         updated = _assoc(n.a, value, i)
-        return isnothing(c) ? Node23(updated, n.b) : Node23(updated, n.b, something(c))
+        return isnothing(c) ? _unchecked_tree23(updated, n.b) : _unchecked_tree23(updated, n.b, something(c))
     end
     i -= j
 
     j = len(n.b)
     if i <= j
         updated = _assoc(n.b, value, i)
-        return isnothing(c) ? Node23(n.a, updated) : Node23(n.a, updated, something(c))
+        return isnothing(c) ? _unchecked_tree23(n.a, updated) : _unchecked_tree23(n.a, updated, something(c))
     end
 
     if !isnothing(c)
         i -= j
         child = something(c)
         if i <= len(child)
-            return Node23(n.a, n.b, _assoc(child, value, i))
+            return _unchecked_tree23(n.a, n.b, _assoc(child, value, i))
         end
     end
 
@@ -706,19 +759,19 @@ end
 function _assoc(ft::DeepFT{T}, value::T, i::Int) where {T}
     j = len(ft.left)
     if i <= j
-        return DeepFT(_assoc(ft.left, value, i), ft.succ, ft.right)
+        return _unchecked_deep(_assoc(ft.left, value, i), ft.succ, ft.right)
     end
     i -= j
 
     j = len(ft.succ)
     if i <= j
-        return DeepFT(ft.left, _assoc(ft.succ, value, i), ft.right)
+        return _unchecked_deep(ft.left, _assoc(ft.succ, value, i), ft.right)
     end
     i -= j
 
     j = len(ft.right)
     if i <= j
-        return DeepFT(ft.left, ft.succ, _assoc(ft.right, value, i))
+        return _unchecked_deep(ft.left, ft.succ, _assoc(ft.right, value, i))
     end
 
     throw(BoundsError())
@@ -956,13 +1009,13 @@ app3(x::SingleFT, ts, r) = conjl(x.a, conjlall(tuple(ts..., r)))
 app3(l, ts, x::SingleFT) = conjr(conjrall(tuple(l, ts...)), x.a)
 
 
-nodes(a,b) = (Tree23(a, b),)
-nodes(a,b,c) = (Tree23(a,b,c),)
-nodes(a,b,c,d) = (Tree23(a, b), Tree23(c,d))
-nodes(a,b,c,xs...) = tuple(Tree23(a,b,c), nodes(xs...)...)
+nodes(a,b) = (_unchecked_tree23(a, b),)
+nodes(a,b,c) = (_unchecked_tree23(a,b,c),)
+nodes(a,b,c,d) = (_unchecked_tree23(a, b), _unchecked_tree23(c,d))
+nodes(a,b,c,xs...) = tuple(_unchecked_tree23(a,b,c), nodes(xs...)...)
 
 app3(l::DeepFT, ts, r::DeepFT) =
-    DeepFT(l.left, app3(l.succ, nodes(l.right.child..., ts..., r.left.child...), r.succ), r.right)
+    _unchecked_deep(l.left, app3(l.succ, nodes(l.right.child..., ts..., r.left.child...), r.succ), r.right)
 concat(l::FingerTree{T}, r::FingerTree{T}) where {T} = app3(l, (), r)
 concat(l::FingerTree{T}, x, r::FingerTree{T}) where {T} = app3(l, (x,), r)
 
