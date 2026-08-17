@@ -381,49 +381,122 @@ splitr(digit::DigitFT{T,4}) where {T} = _init_digit(digit), digit.child[4]
 # Indexing
 # ---------------------------------------------------------------------------
 
-function Base.getindex(d::DigitFT{T}, i::Int)::T where {T}
-    for k in 1:width(d)
-        j = len(d.child[k])
+# Indexing is read-only, so keep the recursive representation out of the call
+# stack. Bounds are checked once at the public boundary; the internal descent
+# then follows cached measures through the finger-tree and 2-3-tree spines.
+
+@inline function _index_leaf(n::Leaf23{T}, i::Int)::T where {T}
+    j = len(n.a)
+    i <= j && return n.a
+    i -= j
+
+    j = len(n.b)
+    i <= j && return n.b
+    i -= j
+
+    c = n.c
+    !isnothing(c) && i <= len(something(c)) && return something(c)
+    throw(BoundsError())
+end
+
+@inline function _index_tree23(node::Tree23Rep{T}, i::Int)::T where {T}
+    while node isa Node23{T}
+        n = node::Node23{T}
+
+        j = len(n.a)
         if i <= j
-            return getindex(d.child[k], i)
+            node = n.a
+            continue
+        end
+        i -= j
+
+        j = len(n.b)
+        if i <= j
+            node = n.b
+            continue
+        end
+        i -= j
+
+        c = n.c
+        if !isnothing(c) && i <= len(something(c))
+            node = something(c)
+            continue
+        end
+        throw(BoundsError())
+    end
+
+    _index_leaf(node::Leaf23{T}, i)
+end
+
+@inline function _index_digit(d::DLeaf{T,N}, i::Int)::T where {T,N}
+    # Leaf digits contain sequence elements directly. In the present measure,
+    # each element has unit weight, so the local weighted index is its slot.
+    @boundscheck 1 <= i <= N || throw(BoundsError())
+    @inbounds d.child[i]
+end
+
+@inline function _index_digit(d::DNode{T,N}, i::Int)::T where {T,N}
+    @inbounds for k in 1:N
+        child = d.child[k]
+        j = len(child)
+        if i <= j
+            return _index_tree23(child, i)
         end
         i -= j
     end
     throw(BoundsError())
 end
-function Base.getindex(n::Tree23{T}, i::Int)::T where {T}
-    j = len(n.a)
-    i <= j && return getindex(n.a, i)
-    i -= j; j = len(n.b)
-    i <= j && return getindex(n.b, i)
-    if !isnothing(n.c)
-        i -= j; j = len(something(n.c))
-        i <= j && return getindex(something(n.c), i)
+
+@inline function _index_fingertree(ft::FingerTreeRep{T}, i::Int)::T where {T}
+    tree = ft
+    while true
+        if tree isa SingleFT{T}
+            child = (tree::SingleFT{T}).a
+            if child isa Tree23{T}
+                return _index_tree23(child::Tree23Rep{T}, i)
+            end
+            i == 1 || throw(BoundsError())
+            return child::T
+        elseif tree isa DeepFT{T}
+            deep = tree::DeepFT{T}
+
+            j = len(deep.left)
+            if i <= j
+                return _index_digit(deep.left, i)
+            end
+            i -= j
+
+            j = len(deep.succ)
+            if i <= j
+                tree = deep.succ
+                continue
+            end
+            i -= j
+
+            return _index_digit(deep.right, i)
+        end
+
+        throw(BoundsError())
     end
-    throw(BoundsError())
 end
 
-function Base.getindex(::EmptyFT{T}, i::Int)::T where {T}
-    throw(BoundsError())
-end
-function Base.getindex(ft::SingleFT{T}, i::Int)::T where {T}
-    getindex(ft.a, i)
-end
-function Base.getindex(ft::DeepFT{T}, i::Int)::T where {T}
-    j = len(ft.left)
-    i <= j && return getindex(ft.left, i)
-    i -= j
-
-    j = len(ft.succ)
-    i <= j && return getindex(ft.succ, i)
-    i -= j
-
-    j = len(ft.right)
-    i <= j && return getindex(ft.right, i)
-    throw(BoundsError())
+function Base.getindex(d::DigitFT{T}, i::Integer)::T where {T}
+    index = Int(i)
+    1 <= index <= len(d) || throw(BoundsError(d, i))
+    _index_digit(d, index)
 end
 
-Base.getindex(ft::FingerTree, i::Integer) = getindex(ft, Int(i))
+function Base.getindex(n::Tree23{T}, i::Integer)::T where {T}
+    index = Int(i)
+    1 <= index <= len(n) || throw(BoundsError(n, i))
+    _index_tree23(n::Tree23Rep{T}, index)
+end
+
+function Base.getindex(ft::FingerTree{T}, i::Integer)::T where {T}
+    index = Int(i)
+    1 <= index <= length(ft) || throw(BoundsError(ft, i))
+    _index_fingertree(ft::FingerTreeRep{T}, index)
+end
 
 conjl(a::T, _::EmptyFT{T}) where {T} = SingleFT(a)
 conjr(_::EmptyFT{T}, a::T) where {T} = SingleFT(a)
