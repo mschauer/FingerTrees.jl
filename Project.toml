@@ -1,6 +1,6 @@
 name = "FingerTrees"
 uuid = "3d24749a-0845-4c16-a2f2-051d7e3c7003"
-version = "0.1.0"
+version = "0.1.1"
 
 [compat]
 julia = "1.10"
