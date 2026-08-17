@@ -149,6 +149,17 @@ struct DeepFT{T} <: FingerTree{T}
 end
 
 const FingerTreeRep{T} = Union{EmptyFT{T}, SingleFT{T}, DeepFT{T}}
+const SplitValue{T} = Union{T,Tree23Rep{T}}
+
+struct LeftView{T}
+    value::SplitValue{T}
+    rest::FingerTreeRep{T}
+end
+
+struct RightView{T}
+    rest::FingerTreeRep{T}
+    value::SplitValue{T}
+end
 
 const TraversalBranch{T} = Union{
     DeepFT{T},
@@ -350,14 +361,14 @@ conjr(_::EmptyFT{T}, a::Tree23{T}) where {T} = SingleFT(a)
 conjl(a, single::SingleFT{K}) where {K} = DeepFT(a, EmptyFT{K}(), single.a)
 conjr(single::SingleFT{K}, a) where {K} = DeepFT(single.a, EmptyFT{K}(), a)
 
-splitl(ft::EmptyFT) = throw(BoundsError(ft))
-splitr(l::EmptyFT) = splitl(l)
+_viewl(ft::EmptyFT{T})::LeftView{T} where {T} = throw(BoundsError(ft))
+_viewr(ft::EmptyFT{T})::RightView{T} where {T} = throw(BoundsError(ft))
 
-function splitl(single::SingleFT{K}) where {K}
-    single.a, EmptyFT{K}()
+function _viewl(single::SingleFT{T})::LeftView{T} where {T}
+    LeftView{T}(single.a, EmptyFT{T}())
 end
-function splitr(single::SingleFT{K}) where {K}
-    EmptyFT{K}(), single.a
+function _viewr(single::SingleFT{T})::RightView{T} where {T}
+    RightView{T}(EmptyFT{T}(), single.a)
 end
 function conjl(a, ft::DeepFT{T}) where {T}
     if width(ft.left) < 4
@@ -377,33 +388,43 @@ function conjr(ft::DeepFT, a)
     end
 end
 
-function splitl(ft::DeepFT)
+function _viewl(ft::DeepFT{T})::LeftView{T} where {T}
     if width(ft.left) > 1
         a, as = splitl(ft.left)
-        return a, DeepFT(as, ft.succ, ft.right)
+        return LeftView{T}(a, DeepFT(as, ft.succ, ft.right))
     else
         a = ft.left.child[1]
         if isempty(ft.succ)
-            return a, toftree(ft.right)
+            return LeftView{T}(a, toftree(ft.right))
         else
-            c, gt = splitl(ft.succ)
-            return a, DeepFT(digit(c), gt, ft.right)
+            s = _viewl(ft.succ)
+            return LeftView{T}(a, DeepFT(digit(s.value), s.rest, ft.right))
         end
     end
 end
-function splitr(ft::DeepFT)
+function _viewr(ft::DeepFT{T})::RightView{T} where {T}
     if width(ft.right) > 1
         as, a = splitr(ft.right)
-        return DeepFT(ft.left, ft.succ, as), a
+        return RightView{T}(DeepFT(ft.left, ft.succ, as), a)
     else
         a = ft.right.child[1]
         if isempty(ft.succ)
-            return toftree(ft.left), a
+            return RightView{T}(toftree(ft.left), a)
         else
-            gt, c = splitr(ft.succ)
-            return DeepFT(ft.left, gt, digit(c)), a
+            s = _viewr(ft.succ)
+            return RightView{T}(DeepFT(ft.left, s.rest, digit(s.value)), a)
         end
     end
+end
+
+function splitl(ft::FingerTree{T}) where {T}
+    s = _viewl(ft)
+    s.value, s.rest
+end
+
+function splitr(ft::FingerTree{T}) where {T}
+    s = _viewr(ft)
+    s.rest, s.value
 end
 
 # ---------------------------------------------------------------------------
@@ -411,7 +432,6 @@ end
 # ---------------------------------------------------------------------------
 
 const DigitFragment{T} = Union{Nothing,DigitFTRep{T}}
-const SplitValue{T} = Union{T,Tree23Rep{T}}
 
 struct DigitSplit{T}
     left::DigitFragment{T}
@@ -524,8 +544,8 @@ const NonEmptyFT{T} = Union{SingleFT{T},DeepFT{T}}
 
 _deepl(::Nothing, ::EmptyFT{T}, right::DigitFTRep{T}) where {T} = toftree(right)
 function _deepl(::Nothing, ft::NonEmptyFT{T}, right::DigitFTRep{T}) where {T}
-    x, ft2 = splitl(ft)
-    DeepFT(digit(x), ft2, right)
+    s = _viewl(ft)
+    DeepFT(digit(s.value), s.rest, right)
 end
 _deepl(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
     DeepFT(left, ft, right)
@@ -540,8 +560,8 @@ end
 
 _deepr(left::DigitFTRep{T}, ::EmptyFT{T}, ::Nothing) where {T} = toftree(left)
 function _deepr(left::DigitFTRep{T}, ft::NonEmptyFT{T}, ::Nothing) where {T}
-    ft2, x = splitr(ft)
-    DeepFT(left, ft2, digit(x))
+    s = _viewr(ft)
+    DeepFT(left, s.rest, digit(s.value))
 end
 _deepr(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
     DeepFT(left, ft, right)
