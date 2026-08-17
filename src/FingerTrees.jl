@@ -10,13 +10,12 @@ export assoc, concat, conjl, conjr, split, splitl, splitr
 
 abstract type FingerTree{T} end
 abstract type Tree23{T} end
-
-struct Leaf23{T} <: Tree23{T}
-    a::T
-    b::T
-    c::Union{Nothing,T}
-    len::Int
-    depth::Int
+mutable struct Leaf23{T} <: Tree23{T}
+    const a::T
+    const b::T
+    const c::Union{Nothing,T}
+    const len::Int
+    const depth::Int
     function Leaf23(a::T, b::T) where {T}
         dep(a) == dep(b) || throw(ArgumentError("cannot construct an uneven 2-leaf"))
         new{T}(a, b, nothing, len(a) + len(b), dep(a) + 1)
