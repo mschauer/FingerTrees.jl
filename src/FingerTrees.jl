@@ -191,14 +191,26 @@ end
 const FingerTreeRep{T} = Union{EmptyFT{T}, SingleFT{T}, DeepFT{T}}
 const SplitValue{T} = Union{T,Tree23Rep{T}}
 
-struct LeftView{T}
-    value::SplitValue{T}
+# End views distinguish the public leaf level from recursive node levels.
+# This lets pop avoid carrying SplitValue{T} through the recursive hot path.
+struct LeafLeftView{T}
+    value::T
     rest::FingerTreeRep{T}
 end
 
-struct RightView{T}
+struct LeafRightView{T}
     rest::FingerTreeRep{T}
-    value::SplitValue{T}
+    value::T
+end
+
+struct NodeLeftView{T}
+    value::Tree23Rep{T}
+    rest::FingerTreeRep{T}
+end
+
+struct NodeRightView{T}
+    rest::FingerTreeRep{T}
+    value::Tree23Rep{T}
 end
 
 const TraversalBranch{T} = Union{
@@ -348,13 +360,22 @@ conjr(digit::DigitFT2{T}, a) where {T} = _unchecked_digit(digit.child[1], digit.
 conjr(digit::DigitFT3{T}, a) where {T} = _unchecked_digit(digit.child..., a)
 
 
-splitl(digit::DigitFT2{T}) where {T} = digit.child[1], _unchecked_digit(digit.child[2])
-splitl(digit::DigitFT3{T}) where {T} = digit.child[1], _unchecked_digit(digit.child[2:end]...)
-splitl(digit::DigitFT4{T}) where {T} = digit.child[1], _unchecked_digit(digit.child[2:end]...)
+# Direct digit tails/inits avoid tuple slicing in the pop hot path.
+@inline _tail_digit(d::DigitFT{T,2}) where {T} = _unchecked_digit(d.child[2])
+@inline _tail_digit(d::DigitFT{T,3}) where {T} = _unchecked_digit(d.child[2], d.child[3])
+@inline _tail_digit(d::DigitFT{T,4}) where {T} = _unchecked_digit(d.child[2], d.child[3], d.child[4])
 
-splitr(digit::DigitFT2{T}) where {T} = _unchecked_digit(digit.child[1]), digit.child[end]
-splitr(digit::DigitFT3{T}) where {T} = _unchecked_digit(digit.child[1:end-1]...), digit.child[end]
-splitr(digit::DigitFT4{T}) where {T} = _unchecked_digit(digit.child[1:end-1]...), digit.child[end]
+@inline _init_digit(d::DigitFT{T,2}) where {T} = _unchecked_digit(d.child[1])
+@inline _init_digit(d::DigitFT{T,3}) where {T} = _unchecked_digit(d.child[1], d.child[2])
+@inline _init_digit(d::DigitFT{T,4}) where {T} = _unchecked_digit(d.child[1], d.child[2], d.child[3])
+
+splitl(digit::DigitFT{T,2}) where {T} = digit.child[1], _tail_digit(digit)
+splitl(digit::DigitFT{T,3}) where {T} = digit.child[1], _tail_digit(digit)
+splitl(digit::DigitFT{T,4}) where {T} = digit.child[1], _tail_digit(digit)
+
+splitr(digit::DigitFT{T,2}) where {T} = _init_digit(digit), digit.child[2]
+splitr(digit::DigitFT{T,3}) where {T} = _init_digit(digit), digit.child[3]
+splitr(digit::DigitFT{T,4}) where {T} = _init_digit(digit), digit.child[4]
 
 # ---------------------------------------------------------------------------
 # Indexing
@@ -413,15 +434,26 @@ conjr(_::EmptyFT{T}, a::Tree23{T}) where {T} = SingleFT(a)
 conjl(a, single::SingleFT{K}) where {K} = _unchecked_deep(a, EmptyFT{K}(), single.a)
 conjr(single::SingleFT{K}, a) where {K} = _unchecked_deep(single.a, EmptyFT{K}(), a)
 
-_viewl(ft::EmptyFT{T}) where {T} = throw(BoundsError(ft))
-_viewr(ft::EmptyFT{T}) where {T} = throw(BoundsError(ft))
+# Public pops operate at the leaf level.  Recursive middle-tree pops operate on
+# Tree23 values.  Keeping these paths separate avoids SplitValue union payloads
+# and generic digit conversion during replenishment.
 
-function _viewl(single::SingleFT{T})::LeftView{T} where {T}
-    LeftView{T}(single.a, EmptyFT{T}())
+@inline function _viewl_leaf(single::SingleFT{T})::LeafLeftView{T} where {T}
+    LeafLeftView{T}(single.a::T, EmptyFT{T}())
 end
-function _viewr(single::SingleFT{T})::RightView{T} where {T}
-    RightView{T}(EmptyFT{T}(), single.a)
+
+@inline function _viewr_leaf(single::SingleFT{T})::LeafRightView{T} where {T}
+    LeafRightView{T}(EmptyFT{T}(), single.a::T)
 end
+
+function _viewl_node(single::SingleFT{T})::NodeLeftView{T} where {T}
+    NodeLeftView{T}(single.a::Tree23Rep{T}, EmptyFT{T}())
+end
+
+function _viewr_node(single::SingleFT{T})::NodeRightView{T} where {T}
+    NodeRightView{T}(EmptyFT{T}(), single.a::Tree23Rep{T})
+end
+
 function conjl(a, ft::DeepFT{T}) where {T}
     if width(ft.left) < 4
         _unchecked_deep(conjl(a, ft.left), ft.succ, ft.right)
@@ -440,42 +472,111 @@ function conjr(ft::DeepFT, a)
     end
 end
 
-function _viewl(ft::DeepFT{T})::LeftView{T} where {T}
-    if width(ft.left) > 1
-        a, as = splitl(ft.left)
-        return LeftView{T}(a, _unchecked_deep(as, ft.succ, ft.right))
-    else
-        a = ft.left.child[1]
-        if isempty(ft.succ)
-            return LeftView{T}(a, toftree(ft.right))
-        else
-            s = _viewl(ft.succ)
-            return LeftView{T}(a, _unchecked_deep(digit(s.value), s.rest, ft.right))
-        end
+function _viewl_leaf(ft::DeepFT{T}, left::DLeaf{T,N})::LeafLeftView{T} where {T,N}
+    a = left.child[1]
+    if N > 1
+        return LeafLeftView{T}(a, _unchecked_deep(_tail_digit(left), ft.succ, ft.right))
     end
-end
-function _viewr(ft::DeepFT{T})::RightView{T} where {T}
-    if width(ft.right) > 1
-        as, a = splitr(ft.right)
-        return RightView{T}(_unchecked_deep(ft.left, ft.succ, as), a)
-    else
-        a = ft.right.child[1]
-        if isempty(ft.succ)
-            return RightView{T}(toftree(ft.left), a)
-        else
-            s = _viewr(ft.succ)
-            return RightView{T}(_unchecked_deep(ft.left, s.rest, digit(s.value)), a)
-        end
+
+    middle = ft.succ
+    if middle isa EmptyFT{T}
+        return LeafLeftView{T}(a, toftree(ft.right))
     end
+
+    s = _viewl_node(middle)
+    # The first middle level of a leaf tree contains Leaf23 values.
+    node = s.value::Leaf23{T}
+    return LeafLeftView{T}(a, _unchecked_deep(digit(node), s.rest, ft.right))
 end
 
-function splitl(ft::FingerTree{T}) where {T}
-    s = _viewl(ft)
+function _viewr_leaf(ft::DeepFT{T}, right::DLeaf{T,N})::LeafRightView{T} where {T,N}
+    a = right.child[N]
+    if N > 1
+        return LeafRightView{T}(_unchecked_deep(ft.left, ft.succ, _init_digit(right)), a)
+    end
+
+    middle = ft.succ
+    if middle isa EmptyFT{T}
+        return LeafRightView{T}(toftree(ft.left), a)
+    end
+
+    s = _viewr_node(middle)
+    # The first middle level of a leaf tree contains Leaf23 values.
+    node = s.value::Leaf23{T}
+    return LeafRightView{T}(_unchecked_deep(ft.left, s.rest, digit(node)), a)
+end
+
+function _viewl_node(ft::DeepFT{T}, left::DNode{T,N})::NodeLeftView{T} where {T,N}
+    a = left.child[1]
+    if N > 1
+        return NodeLeftView{T}(a, _unchecked_deep(_tail_digit(left), ft.succ, ft.right))
+    end
+
+    middle = ft.succ
+    if middle isa EmptyFT{T}
+        return NodeLeftView{T}(a, toftree(ft.right))
+    end
+
+    s = _viewl_node(middle)
+    # A nonempty successor of a node-level tree is at least two levels deep,
+    # so the borrowed value is necessarily a Node23 rather than a Leaf23.
+    node = s.value::Node23{T}
+    return NodeLeftView{T}(a, _unchecked_deep(digit(node), s.rest, ft.right))
+end
+
+function _viewr_node(ft::DeepFT{T}, right::DNode{T,N})::NodeRightView{T} where {T,N}
+    a = right.child[N]
+    if N > 1
+        return NodeRightView{T}(_unchecked_deep(ft.left, ft.succ, _init_digit(right)), a)
+    end
+
+    middle = ft.succ
+    if middle isa EmptyFT{T}
+        return NodeRightView{T}(toftree(ft.left), a)
+    end
+
+    s = _viewr_node(middle)
+    # Symmetric to _viewl_node: recursive borrowing here always yields Node23.
+    node = s.value::Node23{T}
+    return NodeRightView{T}(_unchecked_deep(ft.left, s.rest, digit(node)), a)
+end
+
+@inline function _viewl_leaf(ft::DeepFT{T})::LeafLeftView{T} where {T}
+    _viewl_leaf(ft, ft.left::DLeaf{T})
+end
+
+@inline function _viewr_leaf(ft::DeepFT{T})::LeafRightView{T} where {T}
+    _viewr_leaf(ft, ft.right::DLeaf{T})
+end
+
+function _viewl_node(ft::DeepFT{T})::NodeLeftView{T} where {T}
+    _viewl_node(ft, ft.left::DNode{T})
+end
+
+function _viewr_node(ft::DeepFT{T})::NodeRightView{T} where {T}
+    _viewr_node(ft, ft.right::DNode{T})
+end
+
+splitl(ft::EmptyFT) = throw(BoundsError(ft))
+splitr(ft::EmptyFT) = throw(BoundsError(ft))
+
+function splitl(single::SingleFT{T}) where {T}
+    s = _viewl_leaf(single)
     s.value, s.rest
 end
 
-function splitr(ft::FingerTree{T}) where {T}
-    s = _viewr(ft)
+function splitr(single::SingleFT{T}) where {T}
+    s = _viewr_leaf(single)
+    s.rest, s.value
+end
+
+function splitl(ft::DeepFT{T}) where {T}
+    s = _viewl_leaf(ft)
+    s.value, s.rest
+end
+
+function splitr(ft::DeepFT{T}) where {T}
+    s = _viewr_leaf(ft)
     s.rest, s.value
 end
 
@@ -596,7 +697,7 @@ const NonEmptyFT{T} = Union{SingleFT{T},DeepFT{T}}
 
 _deepl(::Nothing, ::EmptyFT{T}, right::DigitFTRep{T}) where {T} = toftree(right)
 function _deepl(::Nothing, ft::NonEmptyFT{T}, right::DigitFTRep{T}) where {T}
-    s = _viewl(ft)
+    s = _viewl_node(ft)
     _unchecked_deep(digit(s.value), s.rest, right)
 end
 _deepl(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
@@ -612,7 +713,7 @@ end
 
 _deepr(left::DigitFTRep{T}, ::EmptyFT{T}, ::Nothing) where {T} = toftree(left)
 function _deepr(left::DigitFTRep{T}, ft::NonEmptyFT{T}, ::Nothing) where {T}
-    s = _viewr(ft)
+    s = _viewr_node(ft)
     _unchecked_deep(left, s.rest, digit(s.value))
 end
 _deepr(left::DigitFTRep{T}, ft::FingerTreeRep{T}, right::DigitFTRep{T}) where {T} =
