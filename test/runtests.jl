@@ -3,6 +3,7 @@ using Random
 using Test
 
 const FT = FingerTrees
+include("check_invariants.jl")
 
 "Build the same sequence while exercising both persistent end operations."
 function mixed_tree(values, rng)
@@ -24,40 +25,6 @@ function mixed_tree(values, rng)
     tree
 end
 
-"Check cached measures and balancing invariants throughout the representation."
-function check_invariants(node)
-    if node isa FT.EmptyFT
-        @test FT.len(node) == 0
-        @test FT.dep(node) == 0
-    elseif node isa FT.SingleFT
-        check_invariants(node.a)
-        @test FT.len(node) == FT.len(node.a)
-        @test FT.dep(node) == FT.dep(node.a)
-    elseif node isa FT.DeepFT
-        check_invariants(node.left)
-        check_invariants(node.succ)
-        check_invariants(node.right)
-        @test FT.len(node) == FT.len(node.left) + FT.len(node.succ) + FT.len(node.right)
-        @test FT.dep(node.left) == FT.dep(node.right)
-        @test isempty(node.succ) || FT.dep(node.succ) == FT.dep(node.left) + 1
-    elseif node isa FT.DigitFT
-        foreach(check_invariants, node.child)
-        @test FT.len(node) == sum(FT.len, node.child)
-        @test 1 <= FT.width(node) <= 4
-    elseif node isa FT.Tree23
-        children = FT.astuple(node)
-        foreach(check_invariants, children)
-        @test FT.len(node) == sum(FT.len, children)
-        @test all(==(FT.dep(first(children))), FT.dep.(children))
-        @test FT.width(node) in (2, 3)
-    else
-        @test FT.len(node) == 1
-        @test FT.dep(node) == 0
-    end
-
-    nothing
-end
-
 @testset "construction and collection interface" begin
     empty_tree = FingerTree(Int)
     @test empty_tree isa EmptyFT{Int}
@@ -69,6 +36,7 @@ end
     @test keys(empty_tree) == Base.OneTo(0)
     @test copy(empty_tree) === empty_tree
     @test empty(empty_tree) isa EmptyFT{Int}
+    check_invariants(empty_tree)
 
     tree = FingerTree(1:100)
     @test eltype(tree) === Int
@@ -85,13 +53,16 @@ end
     @test tree == FingerTree(1:100)
     @test tree != FingerTree(2:101)
     @test tree != FingerTree(1:99)
+    check_invariants(tree)
 
     converted = FingerTree(Float64, 1:4)
     @test eltype(converted) === Float64
     @test collect(converted) == [1.0, 2.0, 3.0, 4.0]
+    check_invariants(converted)
 
     strings = FingerTree(["alpha", "beta", "gamma"])
     @test collect(strings) == ["alpha", "beta", "gamma"]
+    check_invariants(strings)
 end
 
 @testset "persistent end operations" begin
@@ -101,6 +72,8 @@ end
 
     @test collect(original) == collect(1:20)
     @test collect(extended) == collect(0:21)
+    check_invariants(original)
+    check_invariants(extended)
 
     left_value, left_rest = splitl(extended)
     right_rest, right_value = splitr(extended)
@@ -109,6 +82,9 @@ end
     @test right_value == 21
     @test collect(right_rest) == collect(0:20)
     @test collect(extended) == collect(0:21)
+    check_invariants(left_rest)
+    check_invariants(right_rest)
+    check_invariants(extended)
 
     @test_throws BoundsError splitl(FingerTree(Int))
     @test_throws BoundsError splitr(FingerTree(Int))
@@ -116,6 +92,7 @@ end
 
 @testset "indexing and ranges" begin
     tree = FingerTree(1:64)
+    check_invariants(tree)
 
     for i in eachindex(tree)
         @test tree[i] == i
@@ -127,26 +104,35 @@ end
     @test_throws BoundsError FingerTree(Int)[1]
 
     for first_index in (1, 2, 17, 64), last_index in (first_index, 64)
-        @test collect(tree[first_index:last_index]) == collect(first_index:last_index)
+        slice = tree[first_index:last_index]
+        @test collect(slice) == collect(first_index:last_index)
+        check_invariants(slice)
     end
-    @test collect(tree[10:9]) == Int[]
+    empty_slice = tree[10:9]
+    @test collect(empty_slice) == Int[]
+    check_invariants(empty_slice)
     @test_throws BoundsError tree[0:1]
     @test_throws BoundsError tree[1:65]
 end
 
 @testset "split, update, and concatenation" begin
     tree = FingerTree(1:64)
+    check_invariants(tree)
 
     for i in (1, 2, 17, 32, 63, 64)
         left, value, right = split(tree, i)
         @test collect(left) == collect(1:i-1)
         @test value == i
         @test collect(right) == collect(i+1:64)
+        check_invariants(left)
+        check_invariants(right)
 
         updated = assoc(tree, -i, i)
         @test updated[i] == -i
         @test tree[i] == i
         @test length(updated) == length(tree)
+        check_invariants(updated)
+        check_invariants(tree)
     end
 
     @test_throws BoundsError split(tree, 0)
@@ -158,15 +144,29 @@ end
         left = FingerTree(1:left_length)
         right = FingerTree(left_length+1:left_length+right_length)
         expected = collect(1:left_length+right_length)
-        @test collect(concat(left, right)) == expected
-        @test collect(FT.concat(left, left_length + 1, FingerTree(left_length+2:left_length+right_length+1))) ==
-              collect(1:left_length+right_length+1)
+
+        joined = concat(left, right)
+        @test collect(joined) == expected
+        check_invariants(joined)
+
+        joined_with_middle = FT.concat(
+            left,
+            left_length + 1,
+            FingerTree(left_length+2:left_length+right_length+1),
+        )
+        @test collect(joined_with_middle) == collect(1:left_length+right_length+1)
+        check_invariants(joined_with_middle)
     end
 
     empty_tree = FingerTree(Int)
     @test concat(empty_tree, empty_tree) === empty_tree
-    @test collect(concat(empty_tree, tree)) == collect(1:64)
-    @test collect(concat(tree, empty_tree)) == collect(1:64)
+
+    right_joined = concat(empty_tree, tree)
+    left_joined = concat(tree, empty_tree)
+    @test collect(right_joined) == collect(1:64)
+    @test collect(left_joined) == collect(1:64)
+    check_invariants(right_joined)
+    check_invariants(left_joined)
 end
 
 @testset "iteration and reduction" begin
@@ -174,9 +174,11 @@ end
     @test [x for x in tree] == collect(1:1024)
     @test [x for x in Iterators.take(tree, 17)] == collect(1:17)
     @test reduce(+, tree) == sum(1:1024)
+    check_invariants(tree)
 
     mixed = mixed_tree(collect(1:1024), MersenneTwister(0x5eed))
     @test [x for x in mixed] == collect(1:1024)
+    check_invariants(mixed)
 end
 
 @testset "representation invariants" begin
@@ -193,8 +195,11 @@ end
             for i in 1:n
                 value, left_rest = splitl(left_rest)
                 @test value == i
+                check_invariants(left_rest)
+
                 right_rest, value = splitr(right_rest)
                 @test value == n - i + 1
+                check_invariants(right_rest)
             end
             @test isempty(left_rest)
             @test isempty(right_rest)
@@ -205,6 +210,7 @@ end
 @testset "assoc" begin
     for n in (1, 2, 3, 10, 100, 1024)
         ft = FingerTree(1:n)
+        check_invariants(ft)
 
         for i in unique((1, max(1, n ÷ 2), n))
             replacement = -i
@@ -216,6 +222,8 @@ end
             @test collect(updated) == expected
             @test collect(ft) == collect(1:n)   # persistence
             @test length(updated) == n
+            check_invariants(updated)
+            check_invariants(ft)
         end
     end
 
