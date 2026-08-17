@@ -52,10 +52,12 @@ Tree23(a::Tree23{T},b::Tree23{T}) where {T} = Node23(a,b)
 
 abstract type DigitFT{T,N} end
 
-struct DLeaf{T,N} <: DigitFT{T,N} # Constructors restrict N to 1:4.
-    child::NTuple{N,T}
-    len::Int
-    depth::Int
+# Digits have reference identity so reusing one in a path copy does not box its
+# payload again. Const fields preserve the immutable semantics of the tree.
+mutable struct DLeaf{T,N} <: DigitFT{T,N} # Constructors restrict N to 1:4.
+    const child::NTuple{N,T}
+    const len::Int
+    const depth::Int
     DLeaf(a::T) where {T} = new{T,1}((a,), len(a), 0)
     function DLeaf(a::T,b::T) where {T}
         new{T,2}((a, b), len(a) + len(b), 0)
@@ -68,11 +70,10 @@ struct DLeaf{T,N} <: DigitFT{T,N} # Constructors restrict N to 1:4.
     end
 end
 
-
-struct DNode{T,N} <: DigitFT{T,N}
-    child::NTuple{N,Tree23Rep{T}}
-    len::Int
-    depth::Int
+mutable struct DNode{T,N} <: DigitFT{T,N}
+    const child::NTuple{N,Tree23Rep{T}}
+    const len::Int
+    const depth::Int
     DNode(a::Tree23{T}) where {T} = new{T,1}((a,), len(a), dep(a))
     function DNode(a::Tree23{T},b::Tree23{T}) where {T}
         dep(a) == dep(b) || throw(ArgumentError("cannot construct an uneven digit"))
@@ -558,13 +559,11 @@ function _split(ft::EmptyFT{T}, i::Int)::TreeSplit{T} where {T}
 end
 
 function _split(ft::SingleFT{T}, i::Int)::TreeSplit{T} where {T}
-    1 <= i <= length(ft) || throw(BoundsError(ft, i))
     empty = EmptyFT{T}()
     TreeSplit{T}(empty, ft.a, empty)
 end
 
 function _split(ft::DeepFT{T}, i::Int)::TreeSplit{T} where {T}
-    1 <= i <= length(ft) || throw(BoundsError(ft, i))
     j = len(ft.left)
     if i <= j
         s = split(ft.left, i)
@@ -595,7 +594,9 @@ function _split(ft::DeepFT{T}, i::Int)::TreeSplit{T} where {T}
 end
 
 function split(ft::FingerTree{T}, i::Integer) where {T}
-    s = _split(ft, Int(i))
+    index = Int(i)
+    1 <= index <= length(ft) || throw(BoundsError(ft, i))
+    s = _split(ft, index)
     s.left, s.value, s.right
 end
 
