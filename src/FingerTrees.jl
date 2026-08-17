@@ -361,8 +361,8 @@ conjr(_::EmptyFT{T}, a::Tree23{T}) where {T} = SingleFT(a)
 conjl(a, single::SingleFT{K}) where {K} = DeepFT(a, EmptyFT{K}(), single.a)
 conjr(single::SingleFT{K}, a) where {K} = DeepFT(single.a, EmptyFT{K}(), a)
 
-_viewl(ft::EmptyFT{T})::LeftView{T} where {T} = throw(BoundsError(ft))
-_viewr(ft::EmptyFT{T})::RightView{T} where {T} = throw(BoundsError(ft))
+_viewl(ft::EmptyFT{T}) where {T} = throw(BoundsError(ft))
+_viewr(ft::EmptyFT{T}) where {T} = throw(BoundsError(ft))
 
 function _viewl(single::SingleFT{T})::LeftView{T} where {T}
     LeftView{T}(single.a, EmptyFT{T}())
