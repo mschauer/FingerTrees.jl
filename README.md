@@ -50,9 +50,9 @@ left, value, right = split_measure(n -> n >= 40, measured)
 ```
 
 Custom measures subtype `Measure` and implement `Base.identity`, `measure`,
-and `combine`. The wrapper caches the whole-tree summary; generic
-`split_measure` currently scans linearly until measures are cached throughout
-the internal representation.
+and `combine`. Measures are cached throughout the tree, so `measure(tree)` is
+constant-time and `split_measure` descends through cached summaries in
+logarithmic time. Its predicate should be monotone over successive prefixes.
 
 Run the tests with:
 

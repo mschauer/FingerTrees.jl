@@ -8,6 +8,21 @@ struct MinimumSecond <: FT.Measure end
 Base.identity(::MinimumSecond) = typemax(Int)
 FT.measure(::MinimumSecond, value::Pair) = last(value)
 FT.combine(::MinimumSecond, left::Int, right::Int) = min(left, right)
+
+struct ConcatenateMeasure <: FT.Measure end
+Base.identity(::ConcatenateMeasure) = ""
+FT.measure(::ConcatenateMeasure, value) = string(value)
+FT.combine(::ConcatenateMeasure, left::String, right::String) = left * right
+
+struct CountingLength <: FT.Measure
+    calls::Base.RefValue{Int}
+end
+Base.identity(::CountingLength) = 0
+function FT.measure(op::CountingLength, _)
+    op.calls[] += 1
+    1
+end
+FT.combine(::CountingLength, left::Int, right::Int) = left + right
 include("check_invariants.jl")
 
 "Build the same sequence while exercising both persistent end operations."
@@ -75,6 +90,7 @@ end
 
     @test tree isa MeasuredFingerTree{Int,LengthMeasure,Int}
     @test measure(tree) == 64
+    check_measured_invariants(tree)
     @test length(tree) == 64
     @test collect(tree) == collect(1:64)
     @test tree[17] == 17
@@ -83,19 +99,29 @@ end
 
     root = FingerTree(1:64)
     wrapped = MeasuredFingerTree(root, LengthMeasure())
-    @test FingerTree(wrapped) === root
+    @test FingerTree(wrapped) == root
     @test measure(wrapped) == 64
 
     extended = conjr(conjl(0, tree), 65)
     @test measure(extended) == 66
     @test first(extended) == 0
     @test last(extended) == 65
+    check_measured_invariants(extended)
 
     left, value, right = split(tree, 32)
     @test value == 32
     @test measure(left) == 31
     @test measure(right) == 32
     @test collect(concat(left, conjl(value, right))) == collect(1:64)
+    check_measured_invariants(left)
+    check_measured_invariants(right)
+
+    empty_left, first_value, after_first = split(tree, 1)
+    before_last, last_value, empty_right = split(tree, length(tree))
+    @test isempty(empty_left) && measure(empty_left) == 0
+    @test first_value == 1 && collect(after_first) == collect(2:64)
+    @test collect(before_last) == collect(1:63) && last_value == 64
+    @test isempty(empty_right) && measure(empty_right) == 0
 
     prefix, found, suffix = split_measure(summary -> summary >= 17, tree)
     @test measure(prefix) == 16
@@ -107,6 +133,7 @@ end
     @test updated[32] == -32
     @test measure(updated) == 64
     @test measure(empty(tree)) == 0
+    check_measured_invariants(updated)
 
     priorities = [:a => 5, :b => 3, :c => 7, :d => 1]
     queue = MeasuredFingerTree(priorities, MinimumSecond())
@@ -119,6 +146,28 @@ end
 
     changed = assoc(queue, :d => 9, 4)
     @test measure(changed) == 3
+    check_measured_invariants(queue)
+    check_measured_invariants(changed)
+
+    ordered = MeasuredFingerTree(1:4, ConcatenateMeasure())
+    @test measure(ordered) == "1234"
+    ordered_left, ordered_value, ordered_right =
+        split_measure(summary -> ncodeunits(summary) >= 3, ordered)
+    @test measure(ordered_left) == "12"
+    @test ordered_value == 3
+    @test measure(ordered_right) == "4"
+    check_measured_invariants(ordered)
+
+    calls = Ref(0)
+    counting = MeasuredFingerTree(1:4096, CountingLength(calls))
+    calls[] = 0
+    counted_left, counted_value, counted_right =
+        split_measure(summary -> summary >= 2048, counting)
+    @test counted_value == 2048
+    @test length(counted_left) == 2047
+    @test length(counted_right) == 2048
+    @test calls[] < 100
+    check_measured_invariants(counting)
 end
 
 @testset "persistent end operations" begin
