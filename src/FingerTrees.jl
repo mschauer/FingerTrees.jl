@@ -1,7 +1,8 @@
 module FingerTrees
 import Base: reduce, length, collect, split, eltype, isempty
 
-export FingerTree, EmptyFT
+export FingerTree, EmptyFT, MeasuredFingerTree
+export Measure, LengthMeasure, measure, combine, split_measure
 export assoc, concat, conjl, conjr, split, splitl, splitr
 
 # ---------------------------------------------------------------------------
@@ -189,6 +190,21 @@ struct DeepFT{T} <: FingerTree{T}
 end
 
 const FingerTreeRep{T} = Union{EmptyFT{T}, SingleFT{T}, DeepFT{T}}
+
+abstract type Measure end
+
+struct LengthMeasure <: Measure end
+
+Base.identity(::LengthMeasure) = 0
+measure(::LengthMeasure, _) = 1
+combine(::LengthMeasure, left::Int, right::Int) = left + right
+
+"""A persistent sequence together with its measure operation and cached summary."""
+struct MeasuredFingerTree{T,M,V}
+    measureop::M
+    root::FingerTreeRep{T}
+    summary::V
+end
 const SplitValue{T} = Union{T,Tree23Rep{T}}
 
 # End views distinguish the public leaf level from recursive node levels.
@@ -1194,6 +1210,137 @@ concat(l::FingerTree{T}, r::FingerTree{T}) where {T} = app3(l, (), r)
 concat(l::FingerTree{T}, x, r::FingerTree{T}) where {T} = app3(l, (x,), r)
 
 # ---------------------------------------------------------------------------
+# Measured wrapper
+# ---------------------------------------------------------------------------
+
+function _measure_value(op, value, ::Type{V}) where {V}
+    convert(V, measure(op, value))
+end
+
+function _combine_measure(op, left::V, right, ::Type{V}) where {V}
+    convert(V, combine(op, left, convert(V, right)))
+end
+
+function _measure_root(op, root::FingerTree, ::Type{V}) where {V}
+    summary = convert(V, Base.identity(op))
+    for value in root
+        summary = _combine_measure(op, summary, measure(op, value), V)
+    end
+    summary
+end
+
+_measure_root(::LengthMeasure, root::FingerTree, ::Type{Int}) = length(root)
+
+function _measured(op::M, root::FingerTreeRep{T}, summary::V) where {T,M,V}
+    MeasuredFingerTree{T,M,V}(op, root, summary)
+end
+
+function _remeasured(ft::MeasuredFingerTree{T,M,V}, root::FingerTreeRep{T}) where {T,M,V}
+    _measured(ft.measureop, root, _measure_root(ft.measureop, root, V))
+end
+
+function MeasuredFingerTree(::Type{T}, op::M) where {T,M}
+    summary = Base.identity(op)
+    _measured(op, EmptyFT{T}(), summary)
+end
+
+function MeasuredFingerTree(::Type{T}, values, op::M) where {T,M}
+    tree = MeasuredFingerTree(T, op)
+    for value in values
+        tree = conjr(tree, convert(T, value))
+    end
+    tree
+end
+
+function MeasuredFingerTree(root::FingerTreeRep{T}, op::M) where {T,M}
+    summary = Base.identity(op)
+    V = typeof(summary)
+    _measured(op, root, _measure_root(op, root, V))
+end
+
+MeasuredFingerTree(values, op) = MeasuredFingerTree(eltype(values), values, op)
+FingerTree(ft::MeasuredFingerTree) = ft.root
+
+measure(ft::MeasuredFingerTree) = ft.summary
+
+eltype(::MeasuredFingerTree{T}) where {T} = T
+Base.eltype(::Type{<:MeasuredFingerTree{T}}) where {T} = T
+Base.IteratorEltype(::Type{<:MeasuredFingerTree}) = Base.HasEltype()
+Base.IteratorSize(::Type{<:MeasuredFingerTree}) = Base.HasLength()
+length(ft::MeasuredFingerTree) = length(ft.root)
+isempty(ft::MeasuredFingerTree) = isempty(ft.root)
+Base.firstindex(ft::MeasuredFingerTree) = firstindex(ft.root)
+Base.lastindex(ft::MeasuredFingerTree) = lastindex(ft.root)
+Base.eachindex(ft::MeasuredFingerTree) = eachindex(ft.root)
+Base.keys(ft::MeasuredFingerTree) = keys(ft.root)
+Base.copy(ft::MeasuredFingerTree) = ft
+Base.empty(ft::MeasuredFingerTree{T}) where {T} = MeasuredFingerTree(T, ft.measureop)
+Base.first(ft::MeasuredFingerTree) = first(ft.root)
+Base.last(ft::MeasuredFingerTree) = last(ft.root)
+Base.iterate(ft::MeasuredFingerTree) = iterate(ft.root)
+Base.iterate(ft::MeasuredFingerTree, state) = iterate(ft.root, state)
+collect(ft::MeasuredFingerTree) = collect(ft.root)
+Base.reduce(op::Function, ft::MeasuredFingerTree) = reduce(op, ft.root)
+
+Base.getindex(ft::MeasuredFingerTree, i::Integer) = ft.root[i]
+function Base.getindex(ft::MeasuredFingerTree, range::UnitRange{<:Integer})
+    _remeasured(ft, ft.root[range])
+end
+
+function conjl(value::T, ft::MeasuredFingerTree{T,M,V}) where {T,M,V}
+    value_measure = _measure_value(ft.measureop, value, V)
+    summary = _combine_measure(ft.measureop, value_measure, ft.summary, V)
+    root = conjl(value, ft.root)::FingerTreeRep{T}
+    _measured(ft.measureop, root, summary)
+end
+
+function conjr(ft::MeasuredFingerTree{T,M,V}, value::T) where {T,M,V}
+    value_measure = _measure_value(ft.measureop, value, V)
+    summary = _combine_measure(ft.measureop, ft.summary, value_measure, V)
+    root = conjr(ft.root, value)::FingerTreeRep{T}
+    _measured(ft.measureop, root, summary)
+end
+
+function splitl(ft::MeasuredFingerTree)
+    value, rest = splitl(ft.root)
+    value, _remeasured(ft, rest)
+end
+
+function splitr(ft::MeasuredFingerTree)
+    rest, value = splitr(ft.root)
+    _remeasured(ft, rest), value
+end
+
+function split(ft::MeasuredFingerTree, i::Integer)
+    left, value, right = split(ft.root, i)
+    _remeasured(ft, left), value, _remeasured(ft, right)
+end
+
+function assoc(ft::MeasuredFingerTree{T}, value::T, i::Integer) where {T}
+    _remeasured(ft, assoc(ft.root, value, i))
+end
+
+function concat(left::MeasuredFingerTree{T,M,V}, right::MeasuredFingerTree{T,M,V}) where {T,M,V}
+    isequal(left.measureop, right.measureop) ||
+        throw(ArgumentError("cannot concatenate trees with different measure operations"))
+    summary = _combine_measure(left.measureop, left.summary, right.summary, V)
+    _measured(left.measureop, concat(left.root, right.root), summary)
+end
+
+function split_measure(predicate, ft::MeasuredFingerTree{T,M,V}) where {T,M,V}
+    prefix = convert(V, Base.identity(ft.measureop))
+    for (index, value) in enumerate(ft)
+        prefix = _combine_measure(ft.measureop, prefix, measure(ft.measureop, value), V)
+        predicate(prefix) && return split(ft, index)
+    end
+    throw(BoundsError(ft))
+end
+
+function Base.:(==)(left::MeasuredFingerTree, right::MeasuredFingerTree)
+    isequal(left.measureop, right.measureop) && left.root == right.root
+end
+
+# ---------------------------------------------------------------------------
 # Display
 # ---------------------------------------------------------------------------
 
@@ -1219,6 +1366,16 @@ function Base.show(io::IO, tree::FingerTree{T}) where {T}
     end
 
     print(io, "])")
+end
+
+function Base.show(io::IO, tree::MeasuredFingerTree{T,M}) where {T,M}
+    print(io, "MeasuredFingerTree{")
+    show(io, T)
+    print(io, ", ")
+    show(io, M)
+    print(io, "}(")
+    show(io, tree.root)
+    print(io, ")")
 end
 
 end

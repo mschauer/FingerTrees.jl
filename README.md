@@ -41,6 +41,19 @@ The main operations are:
 - `assoc(tree, value, index)` for persistent replacement;
 - ordinary iteration, `length`, `first`, `last`, scalar indexing, and ranges.
 
+A tree can also own a measure operation:
+
+```julia
+measured = MeasuredFingerTree(1:100, LengthMeasure())
+measure(measured)                                      # 100
+left, value, right = split_measure(n -> n >= 40, measured)
+```
+
+Custom measures subtype `Measure` and implement `Base.identity`, `measure`,
+and `combine`. The wrapper caches the whole-tree summary; generic
+`split_measure` currently scans linearly until measures are cached throughout
+the internal representation.
+
 Run the tests with:
 
 ```julia

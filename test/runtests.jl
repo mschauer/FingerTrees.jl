@@ -3,6 +3,11 @@ using Random
 using Test
 
 const FT = FingerTrees
+
+struct MinimumSecond <: FT.Measure end
+Base.identity(::MinimumSecond) = typemax(Int)
+FT.measure(::MinimumSecond, value::Pair) = last(value)
+FT.combine(::MinimumSecond, left::Int, right::Int) = min(left, right)
 include("check_invariants.jl")
 
 "Build the same sequence while exercising both persistent end operations."
@@ -63,6 +68,57 @@ end
     strings = FingerTree(["alpha", "beta", "gamma"])
     @test collect(strings) == ["alpha", "beta", "gamma"]
     check_invariants(strings)
+end
+
+@testset "measured finger tree" begin
+    tree = MeasuredFingerTree(1:64, LengthMeasure())
+
+    @test tree isa MeasuredFingerTree{Int,LengthMeasure,Int}
+    @test measure(tree) == 64
+    @test length(tree) == 64
+    @test collect(tree) == collect(1:64)
+    @test tree[17] == 17
+    @test collect(tree[10:14]) == collect(10:14)
+    @test measure(tree[10:14]) == 5
+
+    root = FingerTree(1:64)
+    wrapped = MeasuredFingerTree(root, LengthMeasure())
+    @test FingerTree(wrapped) === root
+    @test measure(wrapped) == 64
+
+    extended = conjr(conjl(0, tree), 65)
+    @test measure(extended) == 66
+    @test first(extended) == 0
+    @test last(extended) == 65
+
+    left, value, right = split(tree, 32)
+    @test value == 32
+    @test measure(left) == 31
+    @test measure(right) == 32
+    @test collect(concat(left, conjl(value, right))) == collect(1:64)
+
+    prefix, found, suffix = split_measure(summary -> summary >= 17, tree)
+    @test measure(prefix) == 16
+    @test found == 17
+    @test first(suffix) == 18
+    @test_throws BoundsError split_measure(summary -> summary > 64, tree)
+
+    updated = assoc(tree, -32, 32)
+    @test updated[32] == -32
+    @test measure(updated) == 64
+    @test measure(empty(tree)) == 0
+
+    priorities = [:a => 5, :b => 3, :c => 7, :d => 1]
+    queue = MeasuredFingerTree(priorities, MinimumSecond())
+    @test measure(queue) == 1
+
+    before, event, after = split_measure(summary -> summary <= 3, queue)
+    @test collect(before) == [:a => 5]
+    @test event == (:b => 3)
+    @test collect(after) == [:c => 7, :d => 1]
+
+    changed = assoc(queue, :d => 9, 4)
+    @test measure(changed) == 3
 end
 
 @testset "persistent end operations" begin
