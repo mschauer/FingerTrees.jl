@@ -54,6 +54,18 @@ and `combine`. Measures are cached throughout the tree, so `measure(tree)` is
 constant-time and `split_measure` descends through cached summaries in
 logarithmic time. Its predicate should be monotone over successive prefixes.
 
+A persistent stable min-priority queue is built on this measured tree:
+
+```julia
+queue = PriorityQueue([:compile => 5, :respond => 1, :test => 3])
+peek(queue)                         # :respond => 1
+entry, remaining = dequeue(queue)  # queue itself is unchanged
+queue = enqueue(queue, :urgent, 0)
+```
+
+Entries are written as `value => priority`. Equal priorities leave the queue
+in insertion order.
+
 Run the tests with:
 
 ```julia

@@ -4,6 +4,7 @@ import Base: reduce, length, collect, split, eltype, isempty
 export FingerTree, EmptyFT, MeasuredFingerTree
 export Measure, LengthMeasure, measure, combine, split_measure
 export assoc, concat, conjl, conjr, split, splitl, splitr
+export PriorityQueue, enqueue, dequeue, peekpriority
 
 # ---------------------------------------------------------------------------
 # Internal representation
@@ -1699,14 +1700,89 @@ function assoc(ft::MeasuredFingerTree{T,M,V}, value::T, i::Integer) where {T,M,V
     _measured(ft.measureop, _massoc(ft.measureop, ft.root, value, index)::FingerTreeRepV{T,V})
 end
 
+function _mnodes(op::_MeasureOp, values::Tuple)
+    n = length(values)
+    n == 2 && return (_unchecked_tree23(op, values...),)
+    n == 3 && return (_unchecked_tree23(op, values...),)
+    n == 4 && return (
+        _unchecked_tree23(op, values[1], values[2]),
+        _unchecked_tree23(op, values[3], values[4]),
+    )
+    (_unchecked_tree23(op, values[1], values[2], values[3]),
+     _mnodes(op, Base.tail(Base.tail(Base.tail(values))))...)
+end
+
+function _mapp3(op::_MeasureOp, left::EmptyFT, middle::Tuple, right::FingerTree)
+    result = right
+    for value in Iterators.reverse(middle)
+        result = _mconjl(op, value, result)
+    end
+    result
+end
+
+function _mapp3(op::_MeasureOp, left::FingerTree, middle::Tuple, right::EmptyFT)
+    result = left
+    for value in middle
+        result = _mconjr(op, result, value)
+    end
+    result
+end
+
+function _mapp3(op::_MeasureOp, left::EmptyFT{T}, middle::Tuple, right::EmptyFT{T}) where {T}
+    result = left
+    for value in middle
+        result = _mconjr(op, result, value)
+    end
+    result
+end
+
+function _mapp3(op::_MeasureOp, left::EmptyFT, middle::Tuple, right::SingleFT)
+    result = right
+    for value in Iterators.reverse(middle)
+        result = _mconjl(op, value, result)
+    end
+    result
+end
+
+function _mapp3(op::_MeasureOp, left::SingleFT, middle::Tuple, right::EmptyFT)
+    result = left
+    for value in middle
+        result = _mconjr(op, result, value)
+    end
+    result
+end
+
+function _mapp3(op::_MeasureOp, left::SingleFT, middle::Tuple, right::SingleFT)
+    result = left
+    for value in middle
+        result = _mconjr(op, result, value)
+    end
+    _mconjr(op, result, right.a)
+end
+
+function _mapp3(op::_MeasureOp, left::SingleFT, middle::Tuple, right::FingerTree)
+    _mapp3(op, EmptyFT{eltype(left)}(), (left.a, middle...), right)
+end
+
+function _mapp3(op::_MeasureOp, left::FingerTree, middle::Tuple, right::SingleFT)
+    _mapp3(op, left, (middle..., right.a), EmptyFT{eltype(right)}())
+end
+
+function _mapp3(op::_MeasureOp, left::DeepFT, middle::Tuple, right::DeepFT)
+    bridge = (left.right.child..., middle..., right.left.child...)
+    _unchecked_deep(
+        op,
+        left.left,
+        _mapp3(op, left.succ, _mnodes(op, bridge), right.succ),
+        right.right,
+    )
+end
+
 function concat(left::MeasuredFingerTree{T,M,V}, right::MeasuredFingerTree{T,M,V}) where {T,M,V}
     isequal(left.measureop, right.measureop) ||
         throw(ArgumentError("cannot concatenate trees with different measure operations"))
-    result = left
-    for value in right
-        result = conjr(result, value)
-    end
-    result
+    root = _mapp3(left.measureop, left.root, (), right.root)::FingerTreeRepV{T,V}
+    _measured(left.measureop, root, V)
 end
 
 function split_measure(predicate, ft::MeasuredFingerTree{T,M,V}) where {T,M,V}
@@ -1720,6 +1796,8 @@ end
 function Base.:(==)(left::MeasuredFingerTree, right::MeasuredFingerTree)
     isequal(left.measureop, right.measureop) && left.root == right.root
 end
+
+include("PriorityQueue.jl")
 
 # ---------------------------------------------------------------------------
 # Display

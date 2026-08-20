@@ -168,6 +168,67 @@ end
     @test length(counted_right) == 2048
     @test calls[] < 100
     check_measured_invariants(counting)
+
+    counted_left, counted_value, counted_right = split(counting, 2048)
+    calls[] = 0
+    rejoined = concat(conjr(counted_left, counted_value), counted_right)
+    @test collect(rejoined) == collect(1:4096)
+    @test measure(rejoined) == 4096
+    @test calls[] < 20
+    check_measured_invariants(rejoined)
+end
+
+@testset "persistent priority queue" begin
+    empty_queue = PriorityQueue(Symbol, Int)
+    @test isempty(empty_queue)
+    @test length(empty_queue) == 0
+    @test eltype(empty_queue) == Pair{Symbol,Int}
+    @test copy(empty_queue) === empty_queue
+    @test isempty(empty(empty_queue))
+    @test_throws BoundsError peek(empty_queue)
+    @test_throws BoundsError dequeue(empty_queue)
+
+    queue = PriorityQueue([:a => 5, :b => 3, :c => 3, :d => 1])
+    @test length(queue) == 4
+    @test peek(queue) == (:d => 1)
+    @test first(queue) == (:d => 1)
+    @test peekpriority(queue) == 1
+    @test collect(queue) == [:d => 1, :b => 3, :c => 3, :a => 5]
+    check_measured_invariants(queue.tree)
+
+    entry, remaining = dequeue(queue)
+    @test entry == (:d => 1)
+    @test collect(remaining) == [:b => 3, :c => 3, :a => 5]
+    @test collect(queue) == [:d => 1, :b => 3, :c => 3, :a => 5]
+    check_measured_invariants(remaining.tree)
+
+    string_priorities = PriorityQueue([:later => "z", :earlier => "a"])
+    @test peek(string_priorities) == (:earlier => "a")
+
+    extended = enqueue(queue, :e, 0)
+    extended = enqueue(extended, :f => 3)
+    @test peek(extended) == (:e => 0)
+    @test length(queue) == 4
+    @test collect(extended) == [:e => 0, :d => 1, :b => 3, :c => 3, :f => 3, :a => 5]
+
+    rng = MersenneTwister(0xdeadbeef)
+    random_queue = PriorityQueue(Int, Int)
+    inserted = Pair{Int,Int}[]
+    for value in 1:500
+        priority = rand(rng, -20:20)
+        random_queue = enqueue(random_queue, value, priority)
+        push!(inserted, value => priority)
+    end
+
+    expected = sort(inserted; by=last, alg=Base.Sort.MergeSort)
+    @test collect(random_queue) == expected
+    check_measured_invariants(random_queue.tree)
+
+    for expected_entry in expected
+        actual_entry, random_queue = dequeue(random_queue)
+        @test actual_entry == expected_entry
+    end
+    @test isempty(random_queue)
 end
 
 @testset "persistent end operations" begin
