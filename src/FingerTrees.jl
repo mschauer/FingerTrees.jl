@@ -3,7 +3,7 @@ import Base: reduce, length, collect, split, eltype, isempty
 
 export FingerTree, EmptyFT, MeasuredFingerTree
 export Measure, LengthMeasure, measure, combine, split_measure
-export assoc, concat, conjl, conjr, split, splitl, splitr
+export assoc, multiassoc, multiupdate, concat, conjl, conjr, split, splitl, splitr
 export PriorityQueue, enqueue, dequeue, peekpriority
 
 # ---------------------------------------------------------------------------
@@ -1699,6 +1699,320 @@ function assoc(ft::MeasuredFingerTree{T,M,V}, value::T, i::Integer) where {T,M,V
     1 <= index <= length(ft) || throw(BoundsError(ft, i))
     _measured(ft.measureop, _massoc(ft.measureop, ft.root, value, index)::FingerTreeRepV{T,V})
 end
+
+# ---------------------------------------------------------------------------
+# Batched persistent updates
+# ---------------------------------------------------------------------------
+
+# Descend through the union of the affected root-to-leaf paths. Each affected
+# structural node is rebuilt once, while unaffected children are shared.
+
+struct _MultiReplace{A}
+    values::A
+end
+
+struct _MultiTransform{F}
+    f::F
+end
+
+struct _DigitEditResult{T,V}
+    digit::DigitFTRepV{T,V}
+    next::Int
+    stop::Int
+end
+
+@inline _multiedit_value(edit::_MultiReplace, _, update_index::Int, ::Int) =
+    @inbounds edit.values[update_index]
+@inline _multiedit_value(edit::_MultiTransform, old, ::Int, position::Int) =
+    edit.f(position, old)
+
+@inline function _mmultiedit(::_MeasureOp, value::T, indices, edit,
+                             lo::Int, hi::Int, offset::Int) where {T}
+    lo == hi || throw(ArgumentError("multiple batched updates reached one leaf"))
+    position = offset + 1
+    @inbounds indices[lo] == position || throw(BoundsError())
+    convert(T, _multiedit_value(edit, value, lo, position))
+end
+
+@inline function _first_update_after(indices, bound::Int, lo::Int, hi::Int)
+    # `indices` is strictly increasing. Locate the first update beyond this
+    # child's span without rescanning every update at each tree level.
+    first = lo
+    last = hi
+    @inbounds while first <= last
+        middle = first + ((last - first) >>> 1)
+        if indices[middle] <= bound
+            first = middle + 1
+        else
+            last = middle - 1
+        end
+    end
+    first
+end
+
+@inline function _mmultiedit_child_impl(op::_MeasureOp, child, indices, edit,
+                                        lo::Int, hi::Int, offset::Int)
+    stop = offset + len(child)
+    next = _first_update_after(indices, stop, lo, hi)
+    updated = next == lo ? child :
+        _mmultiedit(op, child, indices, edit, lo, next - 1, offset)
+    updated, next, stop
+end
+
+@inline _mmultiedit_child(op::_MeasureOp, child, indices, edit,
+                          lo::Int, hi::Int, offset::Int) =
+    _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+
+@inline function _mmultiedit_child(op::_MeasureOp, child::DLeaf{T,N,V}, indices,
+                                   edit, lo::Int, hi::Int, offset::Int) where {T,N,V}
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    updated::DLeaf{T,N,V}, next, stop
+end
+
+@inline function _mmultiedit_child(op::_MeasureOp, child::DNode{T,N,V}, indices,
+                                   edit, lo::Int, hi::Int, offset::Int) where {T,N,V}
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    updated::DNode{T,N,V}, next, stop
+end
+
+@inline function _mmultiedit_child(op::_MeasureOp, child::Leaf23{T,V}, indices,
+                                   edit, lo::Int, hi::Int, offset::Int) where {T,V}
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    updated::Leaf23{T,V}, next, stop
+end
+
+@inline function _mmultiedit_child(op::_MeasureOp, child::Node23{T,V}, indices,
+                                   edit, lo::Int, hi::Int, offset::Int) where {T,V}
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    updated::Node23{T,V}, next, stop
+end
+
+@inline function _mmultiedit_child(op::_MeasureOp, child::SingleFT{T,V}, indices,
+                                   edit, lo::Int, hi::Int, offset::Int) where {T,V}
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    updated::SingleFT{T,V}, next, stop
+end
+
+@inline function _mmultiedit_child(op::_MeasureOp, child::DeepFT{T,V}, indices,
+                                   edit, lo::Int, hi::Int, offset::Int) where {T,V}
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    updated::DeepFT{T,V}, next, stop
+end
+
+@inline _mmultiedit_child(op::_MeasureOp, child::EmptyFT, indices, edit,
+                          lo::Int, hi::Int, offset::Int) =
+    (child, lo, offset)
+
+@inline function _mmultiedit_digit_child(op::_MeasureOp,
+                                         child::DigitFTRepV{T,V}, indices, edit,
+                                         lo::Int, hi::Int, offset::Int)::
+                                         _DigitEditResult{T,V} where {T,V}
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    _DigitEditResult{T,V}(updated::DigitFTRepV{T,V}, next, stop)
+end
+
+@inline function _mmultiedit_finger_child(op::_MeasureOp,
+                                          child::FingerTreeRepV{T,V}, indices, edit,
+                                          lo::Int, hi::Int, offset::Int) where {T,V}
+    child isa EmptyFT && return child, lo, offset
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    updated::FingerTreeRepV{T,V}, next, stop
+end
+
+@inline function _mmultiedit_children(op::_MeasureOp, children::Tuple{A}, indices,
+                                      edit, lo::Int, hi::Int, offset::Int) where {A}
+    a, next, stop = _mmultiedit_child(op, children[1], indices, edit, lo, hi, offset)
+    (a,), next, stop
+end
+
+
+@inline function _mmultiedit_children(op::_MeasureOp, children::Tuple{A,B}, indices,
+                                      edit, lo::Int, hi::Int, offset::Int) where {A,B}
+    a, next, stop = _mmultiedit_child(op, children[1], indices, edit, lo, hi, offset)
+    b, next, stop = _mmultiedit_child(op, children[2], indices, edit, next, hi, stop)
+    (a, b), next, stop
+end
+
+
+@inline function _mmultiedit_children(op::_MeasureOp, children::Tuple{A,B,C}, indices,
+                                      edit, lo::Int, hi::Int, offset::Int) where {A,B,C}
+    a, next, stop = _mmultiedit_child(op, children[1], indices, edit, lo, hi, offset)
+    b, next, stop = _mmultiedit_child(op, children[2], indices, edit, next, hi, stop)
+    c, next, stop = _mmultiedit_child(op, children[3], indices, edit, next, hi, stop)
+    (a, b, c), next, stop
+end
+
+
+@inline function _mmultiedit_children(op::_MeasureOp, children::Tuple{A,B,C,D}, indices,
+                                      edit, lo::Int, hi::Int, offset::Int) where {A,B,C,D}
+    a, next, stop = _mmultiedit_child(op, children[1], indices, edit, lo, hi, offset)
+    b, next, stop = _mmultiedit_child(op, children[2], indices, edit, next, hi, stop)
+    c, next, stop = _mmultiedit_child(op, children[3], indices, edit, next, hi, stop)
+    d, next, stop = _mmultiedit_child(op, children[4], indices, edit, next, hi, stop)
+    (a, b, c, d), next, stop
+end
+
+function _mmultiedit_digit(op::_MeasureOp, digit::DigitFT, indices, edit,
+                           lo::Int, hi::Int, offset::Int)
+    children, next, _ =
+        _mmultiedit_children(op, digit.child, indices, edit, lo, hi, offset)
+    next == hi + 1 || throw(BoundsError())
+    _unchecked_digit(op, children...)
+end
+
+function _mmultiedit(op::_MeasureOp, digit::DLeaf{T,N,V}, indices, edit,
+                     lo::Int, hi::Int, offset::Int)::DLeaf{T,N,V} where {T,N,V}
+    _mmultiedit_digit(op, digit, indices, edit, lo, hi, offset)
+end
+
+function _mmultiedit(op::_MeasureOp, digit::DNode{T,N,V}, indices, edit,
+                     lo::Int, hi::Int, offset::Int)::DNode{T,N,V} where {T,N,V}
+    _mmultiedit_digit(op, digit, indices, edit, lo, hi, offset)
+end
+
+function _mmultiedit_tree23(op::_MeasureOp, node::Tree23, indices, edit,
+                            lo::Int, hi::Int, offset::Int)
+    children, next, _ =
+        _mmultiedit_children(op, astuple(node), indices, edit, lo, hi, offset)
+    next == hi + 1 || throw(BoundsError())
+    _unchecked_tree23(op, children...)
+end
+
+function _mmultiedit(op::_MeasureOp, node::Leaf23{T,V}, indices, edit,
+                     lo::Int, hi::Int, offset::Int)::Leaf23{T,V} where {T,V}
+    _mmultiedit_tree23(op, node, indices, edit, lo, hi, offset)
+end
+
+function _mmultiedit(op::_MeasureOp, node::Node23{T,V}, indices, edit,
+                     lo::Int, hi::Int, offset::Int)::Node23{T,V} where {T,V}
+    _mmultiedit_tree23(op, node, indices, edit, lo, hi, offset)
+end
+
+function _mmultiedit(op::_MeasureOp, single::SingleFT{T,V}, indices, edit,
+                     lo::Int, hi::Int, offset::Int)::SingleFT{T,V} where {T,V}
+    _single(op, _mmultiedit(op, single.a, indices, edit, lo, hi, offset))
+end
+
+function _mmultiedit(op::_MeasureOp, tree::DeepFT{T,V}, indices, edit,
+                     lo::Int, hi::Int, offset::Int)::DeepFT{T,V} where {T,V}
+    left_result =
+        _mmultiedit_digit_child(op, tree.left, indices, edit, lo, hi, offset)
+    middle, next, stop =
+        _mmultiedit_finger_child(op, tree.succ, indices, edit,
+                                 left_result.next, hi, left_result.stop)
+    right_result =
+        _mmultiedit_digit_child(op, tree.right, indices, edit, next, hi, stop)
+    right_result.next == hi + 1 || throw(BoundsError())
+    _unchecked_deep(op, left_result.digit, middle, right_result.digit)
+end
+
+_mmultiedit(::Any, tree::EmptyFT, ::Any, ::Any, ::Int, ::Int, ::Int) =
+    throw(BoundsError(tree))
+
+function _check_sorted_indices(indices, n::Int)
+    previous = 0
+    @inbounds for k in eachindex(indices)
+        index = Int(indices[k])
+        1 <= index <= n || throw(BoundsError(1:n, index))
+        index > previous ||
+            throw(ArgumentError("indices must be distinct and strictly increasing"))
+        previous = index
+    end
+    nothing
+end
+
+function _sort_updates(indices, values, ::Type{T}) where {T}
+    length(indices) == length(values) ||
+        throw(DimensionMismatch("indices and values must have equal length"))
+    order = sortperm(indices)
+    sorted_indices = Vector{Int}(undef, length(order))
+    sorted_values = Vector{T}(undef, length(order))
+    @inbounds for k in eachindex(order)
+        source = order[k]
+        sorted_indices[k] = Int(indices[source])
+        sorted_values[k] = convert(T, values[source])
+    end
+    sorted_indices, sorted_values
+end
+
+"""
+    multiassoc(tree, indices, values; presorted=false)
+
+Persistently replace several elements in one structural descent. With
+`presorted=true`, indices must be distinct and strictly increasing; otherwise
+the index/value pairs are sorted first.
+"""
+function multiassoc(ft::MeasuredFingerTree{T,M,V}, indices::AbstractVector{<:Integer},
+                    values::AbstractVector; presorted::Bool=false) where {T,M,V}
+    length(indices) == length(values) ||
+        throw(DimensionMismatch("indices and values must have equal length"))
+    isempty(indices) && return ft
+
+    if presorted
+        _check_sorted_indices(indices, length(ft))
+        root = _mmultiedit(ft.measureop, ft.root, indices, _MultiReplace(values),
+                           firstindex(indices), lastindex(indices), 0)
+    else
+        sorted_indices, sorted_values = _sort_updates(indices, values, T)
+        _check_sorted_indices(sorted_indices, length(ft))
+        root = _mmultiedit(ft.measureop, ft.root, sorted_indices,
+                           _MultiReplace(sorted_values), 1,
+                           length(sorted_indices), 0)
+    end
+    _measured(ft.measureop, root::FingerTreeRepV{T,V}, V)
+end
+
+function multiassoc(ft::FingerTree{T}, indices::AbstractVector{<:Integer},
+                    values::AbstractVector; presorted::Bool=false) where {T}
+    length(indices) == length(values) ||
+        throw(DimensionMismatch("indices and values must have equal length"))
+    isempty(indices) && return ft
+
+    if presorted
+        _check_sorted_indices(indices, length(ft))
+        _mmultiedit(_NO_MEASURE, ft, indices, _MultiReplace(values),
+                    firstindex(indices), lastindex(indices), 0)::FingerTreeRep{T}
+    else
+        sorted_indices, sorted_values = _sort_updates(indices, values, T)
+        _check_sorted_indices(sorted_indices, length(ft))
+        _mmultiedit(_NO_MEASURE, ft, sorted_indices, _MultiReplace(sorted_values),
+                    1, length(sorted_indices), 0)::FingerTreeRep{T}
+    end
+end
+
+"""
+    multiupdate(tree, indices, f; presorted=false)
+
+Persistently transform several leaves in one structural descent. The callback
+is invoked as `f(index, old_value)` once for each selected element.
+"""
+function multiupdate(ft::MeasuredFingerTree{T,M,V}, indices::AbstractVector{<:Integer},
+                     f::F; presorted::Bool=false) where {T,M,V,F}
+    isempty(indices) && return ft
+    sorted_indices = presorted ? indices : sort!(Int[Int(index) for index in indices])
+    _check_sorted_indices(sorted_indices, length(ft))
+    lo, hi = firstindex(sorted_indices), lastindex(sorted_indices)
+    root = _mmultiedit(ft.measureop, ft.root, sorted_indices, _MultiTransform(f),
+                       lo, hi, 0)
+    _measured(ft.measureop, root::FingerTreeRepV{T,V}, V)
+end
+
+function multiupdate(ft::FingerTree{T}, indices::AbstractVector{<:Integer},
+                     f::F; presorted::Bool=false) where {T,F}
+    isempty(indices) && return ft
+    sorted_indices = presorted ? indices : sort!(Int[Int(index) for index in indices])
+    _check_sorted_indices(sorted_indices, length(ft))
+    lo, hi = firstindex(sorted_indices), lastindex(sorted_indices)
+    _mmultiedit(_NO_MEASURE, ft, sorted_indices, _MultiTransform(f), lo, hi, 0)::FingerTreeRep{T}
+end
+
+# Do-block-friendly forms.
+multiupdate(f::F, ft::MeasuredFingerTree, indices::AbstractVector{<:Integer};
+            presorted::Bool=false) where {F} =
+    multiupdate(ft, indices, f; presorted)
+multiupdate(f::F, ft::FingerTree, indices::AbstractVector{<:Integer};
+            presorted::Bool=false) where {F} =
+    multiupdate(ft, indices, f; presorted)
 
 function _mnodes(op::_MeasureOp, values::Tuple)
     n = length(values)

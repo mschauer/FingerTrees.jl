@@ -397,3 +397,71 @@ end
     @test_throws BoundsError assoc(ft, 0, 0)
     @test_throws BoundsError assoc(ft, 0, 11)
 end
+
+@testset "batched assoc and update" begin
+    rng = MersenneTwister(0xba7c4)
+
+    for n in (1, 2, 3, 10, 100, 1024)
+        tree = FingerTree(1:n)
+        count = min(n, 17)
+        indices = sort!(randperm(rng, n)[1:count])
+        values = -indices
+
+        updated = multiassoc(tree, reverse(indices), reverse(values))
+        expected = collect(1:n)
+        expected[indices] = values
+        @test collect(updated) == expected
+        @test collect(tree) == collect(1:n)
+        check_invariants(updated)
+        check_invariants(tree)
+
+        presorted = multiassoc(tree, indices, values; presorted=true)
+        @test collect(presorted) == expected
+        check_invariants(presorted)
+
+        calls = Tuple{Int,Int}[]
+        transformed = multiupdate(tree, indices; presorted=true) do index, old
+            push!(calls, (index, old))
+            old + 10index
+        end
+        transformed_expected = collect(1:n)
+        transformed_expected[indices] .+= 10 .* indices
+        @test collect(transformed) == transformed_expected
+        @test calls == [(index, index) for index in indices]
+        check_invariants(transformed)
+    end
+
+    measured = MeasuredFingerTree(1:128, ConcatenateMeasure())
+    measured_updated = multiassoc(measured, [100, 1, 64], [-100, -1, -64])
+    expected = collect(1:128)
+    expected[[100, 1, 64]] = [-100, -1, -64]
+    @test collect(measured_updated) == expected
+    @test measure(measured_updated) == join(expected)
+    @test collect(measured) == collect(1:128)
+    check_measured_invariants(measured_updated)
+    check_measured_invariants(measured)
+
+    transformed = multiupdate(measured, [1, 64, 128], (index, old) -> old - index;
+                              presorted=true)
+    expected = collect(1:128)
+    expected[[1, 64, 128]] .= 0
+    @test collect(transformed) == expected
+    @test measure(transformed) == join(expected)
+    check_measured_invariants(transformed)
+
+    tree = FingerTree(1:10)
+    measured_tree = MeasuredFingerTree(1:10, LengthMeasure())
+    @test multiassoc(tree, Int[], Int[]) === tree
+    @test multiupdate(tree, Int[], +) === tree
+    @test multiassoc(measured_tree, Int[], Int[]) === measured_tree
+    @test multiupdate(measured_tree, Int[], +) === measured_tree
+
+    @test_throws DimensionMismatch multiassoc(tree, [1, 2], [10])
+    @test_throws ArgumentError multiassoc(tree, [2, 2], [20, 21])
+    @test_throws ArgumentError multiassoc(tree, [2, 1], [20, 10]; presorted=true)
+    @test_throws ArgumentError multiupdate(tree, [2, 2], (_, old) -> old)
+    @test_throws BoundsError multiassoc(tree, [0], [1])
+    @test_throws BoundsError multiassoc(tree, [11], [1])
+    @test_throws BoundsError multiupdate(tree, [0], (_, old) -> old)
+    @test_throws InexactError multiassoc(tree, [1], [1.5])
+end

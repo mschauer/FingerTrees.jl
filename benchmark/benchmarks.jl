@@ -113,6 +113,9 @@ Base.@noinline function bench_assoc_ft(x, indices, values)
     return y
 end
 
+Base.@noinline bench_multiassoc_ft(x, indices, values) =
+    FT.multiassoc(x, indices, values; presorted=true)
+
 Base.@noinline function bench_assoc_pv(x, indices, values)
     y = x
     for q in eachindex(indices, values)
@@ -261,6 +264,13 @@ for n in (32, 1024, 32768)
     index_indices = probe_indices(n, index_count)
     micro_values = collect(-1:-1:-micro_count)
 
+    batch_count = min(128, max(2, n ÷ 8))
+    spread_indices = unique(round.(Int, range(1, n; length=batch_count)))
+    spread_values = -spread_indices
+    cluster_start = max(1, n ÷ 2 - batch_count ÷ 2)
+    clustered_indices = collect(cluster_start:cluster_start + batch_count - 1)
+    clustered_values = -clustered_indices
+
     # Construction ----------------------------------------------------------
 
     addbench!(g, nkey, ("build", "ft-right"),
@@ -397,6 +407,32 @@ for n in (32, 1024, 32768)
             $(vecref)[], $micro_indices, $micro_values
         ) evals=1;
         ops=micro_count)
+
+    # Batched assoc: compare spread and shared-path workloads directly. ----
+
+    addbench!(g, nkey, ("multiassoc-spread", "sequential"),
+        @benchmarkable bench_assoc_ft(
+            $(ftref)[], $spread_indices, $spread_values
+        ) evals=1;
+        ops=length(spread_indices))
+
+    addbench!(g, nkey, ("multiassoc-spread", "batched"),
+        @benchmarkable bench_multiassoc_ft(
+            $(ftref)[], $spread_indices, $spread_values
+        ) evals=1;
+        ops=length(spread_indices))
+
+    addbench!(g, nkey, ("multiassoc-clustered", "sequential"),
+        @benchmarkable bench_assoc_ft(
+            $(ftref)[], $clustered_indices, $clustered_values
+        ) evals=1;
+        ops=batch_count)
+
+    addbench!(g, nkey, ("multiassoc-clustered", "batched"),
+        @benchmarkable bench_multiassoc_ft(
+            $(ftref)[], $clustered_indices, $clustered_values
+        ) evals=1;
+        ops=batch_count)
 
     # Traversal -------------------------------------------------------------
 

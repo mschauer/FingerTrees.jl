@@ -39,6 +39,8 @@ The main operations are:
 - `split(tree, index)` for splitting around an element;
 - `concat(left, right)` for concatenation;
 - `assoc(tree, value, index)` for persistent replacement;
+- `multiassoc(tree, indices, values)` and `multiupdate(tree, indices, f)` for
+  batched replacements, particularly when updated paths overlap;
 - ordinary iteration, `length`, `first`, `last`, scalar indexing, and ranges.
 
 A tree can also own a measure operation:
