@@ -3,7 +3,7 @@ import Base: reduce, length, collect, split, eltype, isempty
 
 export FingerTree, EmptyFT, MeasuredFingerTree
 export Measure, LengthMeasure, measure, combine, split_measure
-export assoc, multiassoc, multiupdate, concat, conjl, conjr, split, splitl, splitr
+export assoc, multiassoc, multiupdate, multifold, concat, conjl, conjr, split, splitl, splitr
 export PriorityQueue, enqueue, dequeue, peekpriority
 
 # ---------------------------------------------------------------------------
@@ -2013,6 +2013,107 @@ multiupdate(f::F, ft::MeasuredFingerTree, indices::AbstractVector{<:Integer};
 multiupdate(f::F, ft::FingerTree, indices::AbstractVector{<:Integer};
             presorted::Bool=false) where {F} =
     multiupdate(ft, indices, f; presorted)
+
+# ---------------------------------------------------------------------------
+# Sparse read-only folds
+# ---------------------------------------------------------------------------
+
+struct _MultiFoldOp{R,C,U,S}
+    identity::R
+    combine::C
+    untouched::U
+    selected::S
+end
+
+struct _MultiFoldResult{R}
+    value::R
+    next::Int
+    stop::Int
+end
+
+@inline function _mmultifold_child(op::_MeasureOp, child, indices, fold::_MultiFoldOp,
+                                   lo::Int, hi::Int, offset::Int)
+    stop = offset + len(child)
+    len(child) == 0 && return _MultiFoldResult(fold.identity, lo, stop)
+    next = _first_update_after(indices, stop, lo, hi)
+    value = if next == lo
+        fold.untouched(offset + 1, stop, _cache(op, child).value)
+    else
+        _mmultifold(op, child, indices, fold, lo, next - 1, offset).value
+    end
+    _MultiFoldResult(value, next, stop)
+end
+
+function _mmultifold_children(op::_MeasureOp, children, indices, fold::_MultiFoldOp,
+                              lo::Int, hi::Int, offset::Int)
+    value = fold.identity
+    next = lo
+    stop = offset
+    for child in children
+        result = _mmultifold_child(op, child, indices, fold, next, hi, stop)
+        value = fold.combine(value, result.value)
+        next = result.next
+        stop = result.stop
+    end
+    _MultiFoldResult(value, next, stop)
+end
+
+@inline function _mmultifold(::_MeasureOp, value, indices, fold::_MultiFoldOp,
+                             lo::Int, hi::Int, offset::Int)
+    lo == hi || throw(ArgumentError("multiple selected indices reached one leaf"))
+    position = offset + 1
+    @inbounds indices[lo] == position || throw(BoundsError())
+    _MultiFoldResult(fold.selected(position, value), lo + 1, position)
+end
+
+_mmultifold(op::_MeasureOp, digit::DigitFT, indices, fold::_MultiFoldOp,
+            lo::Int, hi::Int, offset::Int) =
+    _mmultifold_children(op, digit.child, indices, fold, lo, hi, offset)
+
+_mmultifold(op::_MeasureOp, node::Tree23, indices, fold::_MultiFoldOp,
+            lo::Int, hi::Int, offset::Int) =
+    _mmultifold_children(op, astuple(node), indices, fold, lo, hi, offset)
+
+_mmultifold(op::_MeasureOp, tree::SingleFT, indices, fold::_MultiFoldOp,
+            lo::Int, hi::Int, offset::Int) =
+    _mmultifold(op, tree.a, indices, fold, lo, hi, offset)
+
+_mmultifold(op::_MeasureOp, tree::DeepFT, indices, fold::_MultiFoldOp,
+            lo::Int, hi::Int, offset::Int) =
+    _mmultifold_children(op, (tree.left, tree.succ, tree.right), indices,
+                         fold, lo, hi, offset)
+
+"""
+    multifold(tree, indices; identity, combine, untouched, selected,
+              presorted=false)
+
+Fold a measured finger tree while descending only through the union of paths to
+`indices`. `selected(index, value)` transforms each selected leaf.
+`untouched(first, last, cached_measure)` transforms a maximal untouched subtree
+without visiting its leaves. Results are composed from left to right with
+`combine`, beginning with `identity`.
+
+With `presorted=true`, indices must be distinct and strictly increasing;
+otherwise they are sorted first. An empty index set folds the whole nonempty
+tree through one `untouched` call and returns `identity` for an empty tree.
+"""
+function multifold(ft::MeasuredFingerTree, indices::AbstractVector{<:Integer};
+                   identity, combine, untouched, selected,
+                   presorted::Bool=false)
+    if isempty(indices)
+        isempty(ft) && return identity
+        return untouched(1, length(ft), measure(ft))
+    end
+
+    sorted_indices = presorted ? indices : sort!(Int[Int(index) for index in indices])
+    _check_sorted_indices(sorted_indices, length(ft))
+    fold = _MultiFoldOp(identity, combine, untouched, selected)
+    lo, hi = firstindex(sorted_indices), lastindex(sorted_indices)
+    result = _mmultifold(ft.measureop, ft.root, sorted_indices, fold, lo, hi, 0)
+    result.next == hi + 1 || throw(BoundsError())
+    result.stop == length(ft) || throw(BoundsError())
+    result.value
+end
 
 function _mnodes(op::_MeasureOp, values::Tuple)
     n = length(values)

@@ -465,3 +465,82 @@ end
     @test_throws BoundsError multiupdate(tree, [0], (_, old) -> old)
     @test_throws InexactError multiassoc(tree, [1], [1.5])
 end
+
+@testset "sparse read-only multifold" begin
+    calls = Ref(0)
+    tree = MeasuredFingerTree(1:1024, CountingLength(calls))
+    calls[] = 0
+    selected_indices = [1, 17, 511, 512, 1000, 1024]
+    selected_calls = Tuple{Int,Int}[]
+    untouched_ranges = Tuple{Int,Int}[]
+
+    result = multifold(
+        tree,
+        selected_indices;
+        identity=Int[],
+        combine=(left, right) -> vcat(left, right),
+        untouched=(first, last, cached) -> begin
+            @test cached == last - first + 1
+            push!(untouched_ranges, (first, last))
+            collect(first:last)
+        end,
+        selected=(index, value) -> begin
+            push!(selected_calls, (index, value))
+            [-value]
+        end,
+        presorted=true,
+    )
+
+    expected = collect(1:1024)
+    expected[selected_indices] .*= -1
+    @test result == expected
+    @test selected_calls == [(index, index) for index in selected_indices]
+    # Structural subtrees use cached measures. A few raw leaves adjacent to the
+    # selected paths have no leaf-local cache and are measured directly.
+    @test calls[] <= 3length(selected_indices)
+    @test all(isempty(intersect(first:last, selected_indices))
+              for (first, last) in untouched_ranges)
+
+    all_cached_calls = Tuple{Int,Int,Int}[]
+    all_cached = multifold(
+        tree,
+        Int[];
+        identity=0,
+        combine=+,
+        untouched=(first, last, cached) -> begin
+            push!(all_cached_calls, (first, last, cached))
+            cached
+        end,
+        selected=(_, _) -> error("unexpected selected leaf"),
+    )
+    @test all_cached == 1024
+    @test all_cached_calls == [(1, 1024, 1024)]
+
+    empty_tree = MeasuredFingerTree(Int, LengthMeasure())
+    @test multifold(
+        empty_tree,
+        Int[];
+        identity=:empty,
+        combine=(_, _) -> error("unexpected combine"),
+        untouched=(_, _, _) -> error("unexpected untouched subtree"),
+        selected=(_, _) -> error("unexpected selected leaf"),
+    ) == :empty
+
+    @test multifold(
+        tree,
+        reverse(selected_indices);
+        identity=0,
+        combine=+,
+        untouched=(_, _, cached) -> cached,
+        selected=(_, _) -> 1,
+    ) == length(tree)
+    @test_throws ArgumentError multifold(
+        tree, [2, 2]; identity=0, combine=+, untouched=(_, _, x) -> x,
+        selected=(_, _) -> 1)
+    @test_throws ArgumentError multifold(
+        tree, [2, 1]; identity=0, combine=+, untouched=(_, _, x) -> x,
+        selected=(_, _) -> 1, presorted=true)
+    @test_throws BoundsError multifold(
+        tree, [0]; identity=0, combine=+, untouched=(_, _, x) -> x,
+        selected=(_, _) -> 1)
+end
