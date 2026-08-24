@@ -45,6 +45,27 @@ function mixed_tree(values, rng)
     tree
 end
 
+@testset "inference regressions" begin
+    plain = FingerTree(1:128)
+    measured = MeasuredFingerTree(1:128, LengthMeasure())
+
+    @test @inferred(sum(plain)) == sum(1:128)
+    @test @inferred(sum(measured)) == sum(1:128)
+    @test @inferred(collect(plain)) == collect(1:128)
+    @test @inferred(collect(measured)) == collect(1:128)
+    @test (@inferred assoc(measured, 0, 64)) isa
+        MeasuredFingerTree{Int,LengthMeasure,Int}
+    @test @inferred(multifold(
+        measured,
+        [1, 64, 128];
+        identity=0,
+        combine=+,
+        untouched=(_, _, cached) -> cached,
+        selected=(_, _) -> 1,
+        presorted=true,
+    )) == length(measured)
+end
+
 @testset "construction and collection interface" begin
     empty_tree = FingerTree(Int)
     @test empty_tree isa EmptyFT{Int}

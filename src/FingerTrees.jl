@@ -81,6 +81,18 @@ function _node23(op::_MeasureOp, a::Tree23{T}, b::Tree23{T}, c::Tree23{T}) where
     Node23{T,typeof(cache.value)}(a, b, c, cache.len, cache.value)
 end
 
+@inline function _node23_cached(op::_MeasureOp, a::Tree23RepV{T,V},
+                                b::Tree23RepV{T,V})::Node23{T,V} where {T,V}
+    cache = _cache_many(op, a, b)
+    Node23{T,V}(a, b, nothing, cache.len, cache.value::V)
+end
+@inline function _node23_cached(op::_MeasureOp, a::Tree23RepV{T,V},
+                                b::Tree23RepV{T,V},
+                                c::Tree23RepV{T,V})::Node23{T,V} where {T,V}
+    cache = _cache_many(op, a, b, c)
+    Node23{T,V}(a, b, c, cache.len, cache.value::V)
+end
+
 function Leaf23(a::T, b::T) where {T}
     dep(a) == dep(b) || throw(ArgumentError("cannot construct an uneven 2-leaf"))
     _leaf23(_NO_MEASURE, a, b)
@@ -155,6 +167,29 @@ end
 function _dnode(op::_MeasureOp, children::NTuple{N,<:Tree23{T}}) where {N,T}
     cache = _cache_many(op, children...)
     DNode{T,N,typeof(cache.value)}(children, cache.len, cache.value)
+end
+
+@inline function _dnode_cached(op::_MeasureOp,
+                               children::Tuple{Tree23RepV{T,V}})::DNode{T,1,V} where {T,V}
+    cache = _cache_many(op, children...)
+    DNode{T,1,V}(children, cache.len, cache.value::V)
+end
+@inline function _dnode_cached(op::_MeasureOp,
+                               children::Tuple{Tree23RepV{T,V},Tree23RepV{T,V}})::DNode{T,2,V} where {T,V}
+    cache = _cache_many(op, children...)
+    DNode{T,2,V}(children, cache.len, cache.value::V)
+end
+@inline function _dnode_cached(op::_MeasureOp,
+                               children::Tuple{Tree23RepV{T,V},Tree23RepV{T,V},
+                                              Tree23RepV{T,V}})::DNode{T,3,V} where {T,V}
+    cache = _cache_many(op, children...)
+    DNode{T,3,V}(children, cache.len, cache.value::V)
+end
+@inline function _dnode_cached(op::_MeasureOp,
+                               children::Tuple{Tree23RepV{T,V},Tree23RepV{T,V},
+                                              Tree23RepV{T,V},Tree23RepV{T,V}})::DNode{T,4,V} where {T,V}
+    cache = _cache_many(op, children...)
+    DNode{T,4,V}(children, cache.len, cache.value::V)
 end
 
 DLeaf(values::T...) where {T} = _dleaf(_NO_MEASURE, values)
@@ -426,6 +461,21 @@ conjr(digit::DigitFT1{T}, a) where {T} = _unchecked_digit(digit.child[1], a)
 conjr(digit::DigitFT2{T}, a) where {T} = _unchecked_digit(digit.child[1], digit.child[2], a)
 conjr(digit::DigitFT3{T}, a) where {T} = _unchecked_digit(digit.child..., a)
 
+# Preserve the digit kind and cached-value parameter on the recursive hot path.
+@inline conjl(a::T, d::DLeaf{T,1,Nothing}) where {T} = _dleaf(_NO_MEASURE, (a, d.child[1]))
+@inline conjl(a::T, d::DLeaf{T,2,Nothing}) where {T} = _dleaf(_NO_MEASURE, (a, d.child[1], d.child[2]))
+@inline conjl(a::T, d::DLeaf{T,3,Nothing}) where {T} = _dleaf(_NO_MEASURE, (a, d.child...))
+@inline conjl(a::Tree23RepV{T,Nothing}, d::DNode{T,1,Nothing}) where {T} = _dnode_cached(_NO_MEASURE, (a, d.child[1]))
+@inline conjl(a::Tree23RepV{T,Nothing}, d::DNode{T,2,Nothing}) where {T} = _dnode_cached(_NO_MEASURE, (a, d.child[1], d.child[2]))
+@inline conjl(a::Tree23RepV{T,Nothing}, d::DNode{T,3,Nothing}) where {T} = _dnode_cached(_NO_MEASURE, (a, d.child...))
+
+@inline conjr(d::DLeaf{T,1,Nothing}, a::T) where {T} = _dleaf(_NO_MEASURE, (d.child[1], a))
+@inline conjr(d::DLeaf{T,2,Nothing}, a::T) where {T} = _dleaf(_NO_MEASURE, (d.child[1], d.child[2], a))
+@inline conjr(d::DLeaf{T,3,Nothing}, a::T) where {T} = _dleaf(_NO_MEASURE, (d.child..., a))
+@inline conjr(d::DNode{T,1,Nothing}, a::Tree23RepV{T,Nothing}) where {T} = _dnode_cached(_NO_MEASURE, (d.child[1], a))
+@inline conjr(d::DNode{T,2,Nothing}, a::Tree23RepV{T,Nothing}) where {T} = _dnode_cached(_NO_MEASURE, (d.child[1], d.child[2], a))
+@inline conjr(d::DNode{T,3,Nothing}, a::Tree23RepV{T,Nothing}) where {T} = _dnode_cached(_NO_MEASURE, (d.child..., a))
+
 
 # Direct digit tails/inits avoid tuple slicing in the pop hot path.
 @inline _tail_digit(d::DigitFT{T,2}) where {T} = _unchecked_digit(d.child[2])
@@ -627,22 +677,57 @@ function _viewr_node(single::SingleFT{T,Nothing})::NodeRightView{T,Nothing} wher
     NodeRightView{T,Nothing}(EmptyFT{T}(), single.a::Tree23RepV{T,Nothing})
 end
 
-function conjl(a, ft::DeepFT{T,Nothing}) where {T}
-    if width(ft.left) < 4
-        _unchecked_deep(conjl(a, ft.left), ft.succ, ft.right)
+function _conjl_deep(a::T, ft::DeepFT{T,Nothing}, left::DLeaf{T,N,Nothing})::DeepFT{T,Nothing} where {T,N}
+    if N < 4
+        _deep(_NO_MEASURE, conjl(a, left), ft.succ, ft.right)
     else
-        f = _unchecked_tree23(ft.left.child[2], ft.left.child[3], ft.left.child[4])
-        _unchecked_deep(_unchecked_digit(a, ft.left.child[1]), conjl(f, ft.succ), ft.right)
+        f = _leaf23(_NO_MEASURE, left.child[2], left.child[3], left.child[4])
+        newleft = _dleaf(_NO_MEASURE, (a, left.child[1]))
+        _deep(_NO_MEASURE, newleft, conjl(f, ft.succ), ft.right)
     end
 end
 
-function conjr(ft::DeepFT{T,Nothing}, a) where {T}
-    if width(ft.right) < 4
-        _unchecked_deep(ft.left, ft.succ, conjr(ft.right, a))
+function _conjl_deep(a::Tree23RepV{T,Nothing}, ft::DeepFT{T,Nothing}, left::DNode{T,N,Nothing})::DeepFT{T,Nothing} where {T,N}
+    if N < 4
+        _deep(_NO_MEASURE, conjl(a, left), ft.succ, ft.right)
     else
-        f = _unchecked_tree23(ft.right.child[1:3]...)
-        _unchecked_deep(ft.left, conjr(ft.succ, f), _unchecked_digit(ft.right.child[4], a))
+        f = _node23_cached(_NO_MEASURE, left.child[2], left.child[3], left.child[4])
+        newleft = _dnode_cached(_NO_MEASURE, (a, left.child[1]))
+        _deep(_NO_MEASURE, newleft, conjl(f, ft.succ), ft.right)
     end
+end
+
+function conjl(a, ft::DeepFT{T,Nothing})::DeepFT{T,Nothing} where {T}
+    left = ft.left
+    left isa DLeaf{T} ? _conjl_deep(a::T, ft, left) :
+        _conjl_deep(a::Tree23RepV{T,Nothing}, ft, left::DNode{T})
+end
+
+function _conjr_deep(ft::DeepFT{T,Nothing}, right::DLeaf{T,N,Nothing}, a::T)::DeepFT{T,Nothing} where {T,N}
+    if N < 4
+        _deep(_NO_MEASURE, ft.left, ft.succ, conjr(right, a))
+    else
+        f = _leaf23(_NO_MEASURE, right.child[1], right.child[2], right.child[3])
+        newright = _dleaf(_NO_MEASURE, (right.child[4], a))
+        _deep(_NO_MEASURE, ft.left, conjr(ft.succ, f), newright)
+    end
+end
+
+
+function _conjr_deep(ft::DeepFT{T,Nothing}, right::DNode{T,N,Nothing}, a::Tree23RepV{T,Nothing})::DeepFT{T,Nothing} where {T,N}
+    if N < 4
+        _deep(_NO_MEASURE, ft.left, ft.succ, conjr(right, a))
+    else
+        f = _node23_cached(_NO_MEASURE, right.child[1], right.child[2], right.child[3])
+        newright = _dnode_cached(_NO_MEASURE, (right.child[4], a))
+        _deep(_NO_MEASURE, ft.left, conjr(ft.succ, f), newright)
+    end
+end
+
+function conjr(ft::DeepFT{T,Nothing}, a)::DeepFT{T,Nothing} where {T}
+    right = ft.right
+    right isa DLeaf{T} ? _conjr_deep(ft, right, a::T) :
+        _conjr_deep(ft, right::DNode{T}, a::Tree23RepV{T,Nothing})
 end
 
 function _viewl_leaf(ft::DeepFT{T,Nothing}, left::DLeaf{T,N,Nothing})::LeafLeftView{T,Nothing} where {T,N}
@@ -862,7 +947,11 @@ end
 
 function collect(tree::FingerTree)
     values = Vector{eltype(tree)}(undef, length(tree))
-    traverse((value, i) -> (values[i] = value), tree)
+    i = 1
+    for value in tree
+        @inbounds values[i] = value
+        i += 1
+    end
     values
 end
 
@@ -1209,15 +1298,25 @@ end
             if next == 1
                 state.next[end] = 2
                 child = branch.left
+                child isa DLeaf{T} ? _descend!(state, child) :
+                    _descend!(state, child::DNode{T})
             elseif next == 2
                 state.next[end] = 3
                 child = branch.succ
+                if child isa EmptyFT{T}
+                    nothing
+                elseif child isa SingleFT{T,V}
+                    _descend!(state, child)
+                else
+                    _descend!(state, child::DeepFT{T,V})
+                end
             else
                 pop!(state.branches)
                 pop!(state.next)
                 child = branch.right
+                child isa DLeaf{T} ? _descend!(state, child) :
+                    _descend!(state, child::DNode{T})
             end
-            _descend!(state, child)
         elseif branch isa DNode
             if next == width(branch)
                 pop!(state.branches)
@@ -1225,7 +1324,9 @@ end
             else
                 state.next[end] = next + 1
             end
-            _descend!(state, branch.child[next])
+            child = branch.child[next]
+            child isa Leaf23{T,V} ? _descend!(state, child) :
+                _descend!(state, child::Node23{T,V})
         else
             if next == width(branch)
                 pop!(state.branches)
@@ -1234,7 +1335,8 @@ end
                 state.next[end] = next + 1
             end
             child = next == 1 ? branch.a : next == 2 ? branch.b : something(branch.c)
-            _descend!(state, child)
+            child isa Leaf23{T,V} ? _descend!(state, child) :
+                _descend!(state, child::Node23{T,V})
         end
     end
 end
@@ -1298,8 +1400,10 @@ nodes(a,b,c,xs...) = tuple(_unchecked_tree23(a,b,c), nodes(xs...)...)
 
 app3(l::DeepFT, ts, r::DeepFT) =
     _unchecked_deep(l.left, app3(l.succ, nodes(l.right.child..., ts..., r.left.child...), r.succ), r.right)
-concat(l::FingerTree{T}, r::FingerTree{T}) where {T} = app3(l, (), r)
-concat(l::FingerTree{T}, x, r::FingerTree{T}) where {T} = app3(l, (x,), r)
+concat(l::FingerTree{T}, r::FingerTree{T}) where {T} =
+    app3(l, (), r)::FingerTreeRep{T}
+concat(l::FingerTree{T}, x, r::FingerTree{T}) where {T} =
+    app3(l, (x,), r)::FingerTreeRep{T}
 
 # ---------------------------------------------------------------------------
 # Measured wrapper
@@ -1514,63 +1618,80 @@ function _msplit(op::_MeasureOp, tree::DeepFT{T,V}, i::Int) where {T,V}
     )
 end
 
-function _massoc(op::_MeasureOp, digit::DLeaf{T,N}, value::T, i::Int) where {T,N}
+function _massoc(op::_MeasureOp, digit::DLeaf{T,N,V}, value::T, i::Int)::DLeaf{T,N,V} where {T,N,V}
     children = ntuple(k -> k == i ? value : digit.child[k], Val(N))
     _unchecked_digit(op, children...)
 end
 
-function _massoc(op::_MeasureOp, digit::DNode{T,N}, value::T, i::Int) where {T,N}
+function _massoc(op::_MeasureOp, digit::DNode{T,N,V}, value::T, i::Int)::DNode{T,N,V} where {T,N,V}
     for k in 1:N
         child = digit.child[k]
         if i <= len(child)
-            updated = _massoc(op, child, value, i)
+            updated = _massoc(op, child, value, i)::Tree23RepV{T,V}
             children = ntuple(j -> j == k ? updated : digit.child[j], Val(N))
-            return _unchecked_digit(op, children...)
+            return _dnode_cached(op, children)
         end
         i -= len(child)
     end
     throw(BoundsError())
 end
 
-function _massoc(op::_MeasureOp, node::Leaf23{T}, value::T, i::Int) where {T}
-    children = astuple(node)
-    for k in eachindex(children)
-        if i <= len(children[k])
-            updated = ntuple(j -> j == k ? value : children[j], length(children))
-            return _unchecked_tree23(op, updated...)
-        end
-        i -= len(children[k])
+function _massoc(op::_MeasureOp, node::Leaf23{T,V}, value::T, i::Int)::Leaf23{T,V} where {T,V}
+    c = node.c
+    i <= len(node.a) && return isnothing(c) ?
+        _unchecked_tree23(op, value, node.b) :
+        _unchecked_tree23(op, value, node.b, something(c))
+    i -= len(node.a)
+    i <= len(node.b) && return isnothing(c) ?
+        _unchecked_tree23(op, node.a, value) :
+        _unchecked_tree23(op, node.a, value, something(c))
+    if !isnothing(c)
+        i -= len(node.b)
+        i <= len(something(c)) && return _unchecked_tree23(op, node.a, node.b, value)
     end
     throw(BoundsError())
 end
 
-function _massoc(op::_MeasureOp, node::Node23{T}, value::T, i::Int) where {T}
-    children = astuple(node)
-    for k in eachindex(children)
-        child = children[k]
-        if i <= len(child)
-            replacement = _massoc(op, child, value, i)
-            updated = ntuple(j -> j == k ? replacement : children[j], length(children))
-            return _unchecked_tree23(op, updated...)
-        end
-        i -= len(child)
+function _massoc(op::_MeasureOp, node::Node23{T,V}, value::T, i::Int)::Node23{T,V} where {T,V}
+    c = node.c
+    if i <= len(node.a)
+        replacement = _massoc(op, node.a, value, i)::Tree23RepV{T,V}
+        return isnothing(c) ? _unchecked_tree23(op, replacement, node.b) :
+            _unchecked_tree23(op, replacement, node.b, something(c))
+    end
+    i -= len(node.a)
+    if i <= len(node.b)
+        replacement = _massoc(op, node.b, value, i)::Tree23RepV{T,V}
+        return isnothing(c) ? _unchecked_tree23(op, node.a, replacement) :
+            _unchecked_tree23(op, node.a, replacement, something(c))
+    end
+    if !isnothing(c)
+        i -= len(node.b)
+        child = something(c)
+        i <= len(child) && return _unchecked_tree23(
+            op, node.a, node.b, _massoc(op, child, value, i)::Tree23RepV{T,V})
     end
     throw(BoundsError())
 end
 
-function _massoc(op::_MeasureOp, single::SingleFT{T}, value::T, i::Int) where {T}
+function _massoc(op::_MeasureOp, single::SingleFT{T,V}, value::T, i::Int)::SingleFT{T,V} where {T,V}
     child = single.a
-    child isa Tree23 ? _single(op, _massoc(op, child, value, i)) : _single(op, value)
+    child isa Tree23{T} ?
+        _single(op, _massoc(op, child::Tree23RepV{T,V}, value, i)) :
+        _single(op, value)
 end
 
-function _massoc(op::_MeasureOp, tree::DeepFT{T}, value::T, i::Int) where {T}
+function _massoc(op::_MeasureOp, tree::DeepFT{T,V}, value::T, i::Int)::DeepFT{T,V} where {T,V}
     j = len(tree.left)
-    i <= j && return _unchecked_deep(op, _massoc(op, tree.left, value, i), tree.succ, tree.right)
+    i <= j && return _unchecked_deep(
+        op, _massoc(op, tree.left, value, i)::DigitFTRepV{T,V}, tree.succ, tree.right)
     i -= j
     j = len(tree.succ)
-    i <= j && return _unchecked_deep(op, tree.left, _massoc(op, tree.succ, value, i), tree.right)
+    i <= j && return _unchecked_deep(
+        op, tree.left, _massoc(op, tree.succ, value, i)::FingerTreeRepV{T,V}, tree.right)
     i -= j
-    _unchecked_deep(op, tree.left, tree.succ, _massoc(op, tree.right, value, i))
+    _unchecked_deep(
+        op, tree.left, tree.succ, _massoc(op, tree.right, value, i)::DigitFTRepV{T,V})
 end
 
 @inline _prefix_cache(op::_MeasureOp, prefix::V, child) where {V} =
@@ -1720,6 +1841,7 @@ struct _DigitEditResult{T,V}
     next::Int
     stop::Int
 end
+
 
 @inline _multiedit_value(edit::_MultiReplace, _, update_index::Int, ::Int) =
     @inbounds edit.values[update_index]
@@ -2031,57 +2153,112 @@ struct _MultiFoldResult{R}
     stop::Int
 end
 
-@inline function _mmultifold_child(op::_MeasureOp, child, indices, fold::_MultiFoldOp,
-                                   lo::Int, hi::Int, offset::Int)
+@inline function _mmultifold_child(op::_MeasureOp, child, indices, fold::_MultiFoldOp{R},
+                                   lo::Int, hi::Int, offset::Int)::_MultiFoldResult{R} where {R}
     stop = offset + len(child)
     len(child) == 0 && return _MultiFoldResult(fold.identity, lo, stop)
     next = _first_update_after(indices, stop, lo, hi)
     value = if next == lo
-        fold.untouched(offset + 1, stop, _cache(op, child).value)
+        convert(R, fold.untouched(offset + 1, stop, _cache(op, child).value))
     else
-        _mmultifold(op, child, indices, fold, lo, next - 1, offset).value
+        (_mmultifold(op, child, indices, fold, lo, next - 1, offset)::_MultiFoldResult{R}).value
     end
-    _MultiFoldResult(value, next, stop)
+    _MultiFoldResult{R}(value, next, stop)
 end
 
-function _mmultifold_children(op::_MeasureOp, children, indices, fold::_MultiFoldOp,
-                              lo::Int, hi::Int, offset::Int)
+@inline function _fold_combine(fold::_MultiFoldOp{R}, left::R, right)::R where {R}
+    convert(R, fold.combine(left, right))
+end
+
+@inline function _mmultifold_children(op::_MeasureOp, children::Tuple{A}, indices,
+                                      fold::_MultiFoldOp{R}, lo::Int, hi::Int,
+                                      offset::Int)::_MultiFoldResult{R} where {A,R}
+    a = _mmultifold_child(op, children[1], indices, fold, lo, hi, offset)
+    _MultiFoldResult{R}(_fold_combine(fold, fold.identity, a.value), a.next, a.stop)
+end
+
+@inline function _mmultifold_children(op::_MeasureOp, children::Tuple{A,B}, indices,
+                                      fold::_MultiFoldOp{R}, lo::Int, hi::Int,
+                                      offset::Int)::_MultiFoldResult{R} where {A,B,R}
+    a = _mmultifold_child(op, children[1], indices, fold, lo, hi, offset)
+    b = _mmultifold_child(op, children[2], indices, fold, a.next, hi, a.stop)
+    value = _fold_combine(fold, fold.identity, a.value)
+    _MultiFoldResult{R}(_fold_combine(fold, value, b.value), b.next, b.stop)
+end
+
+@inline function _mmultifold_children(op::_MeasureOp, children::Tuple{A,B,C}, indices,
+                                      fold::_MultiFoldOp{R}, lo::Int, hi::Int,
+                                      offset::Int)::_MultiFoldResult{R} where {A,B,C,R}
+    a = _mmultifold_child(op, children[1], indices, fold, lo, hi, offset)
+    b = _mmultifold_child(op, children[2], indices, fold, a.next, hi, a.stop)
+    c = _mmultifold_child(op, children[3], indices, fold, b.next, hi, b.stop)
     value = fold.identity
-    next = lo
-    stop = offset
-    for child in children
-        result = _mmultifold_child(op, child, indices, fold, next, hi, stop)
-        value = fold.combine(value, result.value)
-        next = result.next
-        stop = result.stop
-    end
-    _MultiFoldResult(value, next, stop)
+    value = _fold_combine(fold, value, a.value)
+    value = _fold_combine(fold, value, b.value)
+    _MultiFoldResult{R}(_fold_combine(fold, value, c.value), c.next, c.stop)
 end
 
-@inline function _mmultifold(::_MeasureOp, value, indices, fold::_MultiFoldOp,
-                             lo::Int, hi::Int, offset::Int)
+@inline function _mmultifold_children(op::_MeasureOp, children::Tuple{A,B,C,D}, indices,
+                                      fold::_MultiFoldOp{R}, lo::Int, hi::Int,
+                                      offset::Int)::_MultiFoldResult{R} where {A,B,C,D,R}
+    a = _mmultifold_child(op, children[1], indices, fold, lo, hi, offset)
+    b = _mmultifold_child(op, children[2], indices, fold, a.next, hi, a.stop)
+    c = _mmultifold_child(op, children[3], indices, fold, b.next, hi, b.stop)
+    d = _mmultifold_child(op, children[4], indices, fold, c.next, hi, c.stop)
+    value = fold.identity
+    value = _fold_combine(fold, value, a.value)
+    value = _fold_combine(fold, value, b.value)
+    value = _fold_combine(fold, value, c.value)
+    _MultiFoldResult{R}(_fold_combine(fold, value, d.value), d.next, d.stop)
+end
+
+@inline function _mmultifold(::_MeasureOp, value::T, indices, fold::_MultiFoldOp{R},
+                             lo::Int, hi::Int, offset::Int)::_MultiFoldResult{R} where {T,R}
     lo == hi || throw(ArgumentError("multiple selected indices reached one leaf"))
     position = offset + 1
     @inbounds indices[lo] == position || throw(BoundsError())
-    _MultiFoldResult(fold.selected(position, value), lo + 1, position)
+    _MultiFoldResult{R}(convert(R, fold.selected(position, value)), lo + 1, position)
 end
 
-_mmultifold(op::_MeasureOp, digit::DigitFT, indices, fold::_MultiFoldOp,
-            lo::Int, hi::Int, offset::Int) =
+function _mmultifold(op::_MeasureOp, digit::DLeaf{T,N,V}, indices, fold::_MultiFoldOp{R},
+                     lo::Int, hi::Int, offset::Int)::_MultiFoldResult{R} where {T,N,V,R}
     _mmultifold_children(op, digit.child, indices, fold, lo, hi, offset)
+end
 
-_mmultifold(op::_MeasureOp, node::Tree23, indices, fold::_MultiFoldOp,
-            lo::Int, hi::Int, offset::Int) =
-    _mmultifold_children(op, astuple(node), indices, fold, lo, hi, offset)
+function _mmultifold(op::_MeasureOp, digit::DNode{T,N,V}, indices, fold::_MultiFoldOp{R},
+                     lo::Int, hi::Int, offset::Int)::_MultiFoldResult{R} where {T,N,V,R}
+    _mmultifold_children(op, digit.child, indices, fold, lo, hi, offset)
+end
 
-_mmultifold(op::_MeasureOp, tree::SingleFT, indices, fold::_MultiFoldOp,
-            lo::Int, hi::Int, offset::Int) =
-    _mmultifold(op, tree.a, indices, fold, lo, hi, offset)
+function _mmultifold(op::_MeasureOp, node::Leaf23{T,V}, indices, fold::_MultiFoldOp{R},
+                     lo::Int, hi::Int, offset::Int)::_MultiFoldResult{R} where {T,V,R}
+    c = node.c
+    isnothing(c) ?
+        _mmultifold_children(op, (node.a, node.b), indices, fold, lo, hi, offset) :
+        _mmultifold_children(op, (node.a, node.b, something(c)), indices, fold, lo, hi, offset)
+end
 
-_mmultifold(op::_MeasureOp, tree::DeepFT, indices, fold::_MultiFoldOp,
-            lo::Int, hi::Int, offset::Int) =
+function _mmultifold(op::_MeasureOp, node::Node23{T,V}, indices, fold::_MultiFoldOp{R},
+                     lo::Int, hi::Int, offset::Int)::_MultiFoldResult{R} where {T,V,R}
+    c = node.c
+    isnothing(c) ?
+        _mmultifold_children(op, (node.a, node.b), indices, fold, lo, hi, offset) :
+        _mmultifold_children(op, (node.a, node.b, something(c)), indices, fold, lo, hi, offset)
+end
+
+function _mmultifold(op::_MeasureOp, tree::SingleFT{T,V}, indices, fold::_MultiFoldOp{R},
+                     lo::Int, hi::Int, offset::Int)::_MultiFoldResult{R} where {T,V,R}
+    child = tree.a
+    child isa Tree23{T} ?
+        _mmultifold(op, child::Tree23RepV{T,V}, indices, fold, lo, hi, offset) :
+        _mmultifold(op, child::T, indices, fold, lo, hi, offset)
+end
+
+function _mmultifold(op::_MeasureOp, tree::DeepFT{T,V}, indices, fold::_MultiFoldOp{R},
+                     lo::Int, hi::Int, offset::Int)::_MultiFoldResult{R} where {T,V,R}
     _mmultifold_children(op, (tree.left, tree.succ, tree.right), indices,
                          fold, lo, hi, offset)
+end
 
 """
     multifold(tree, indices; identity, combine, untouched, selected,
