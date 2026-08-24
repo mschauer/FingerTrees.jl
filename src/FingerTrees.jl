@@ -1933,12 +1933,22 @@ end
     _DigitEditResult{T,V}(updated::DigitFTRepV{T,V}, next, stop)
 end
 
+@inline _mmultiedit_finger_child(::_MeasureOp, child::EmptyFT, ::Any, ::Any,
+                                 lo::Int, ::Int, offset::Int) =
+    (child, lo, offset)
+
 @inline function _mmultiedit_finger_child(op::_MeasureOp,
-                                          child::FingerTreeRepV{T,V}, indices, edit,
+                                          child::SingleFT{T,V}, indices, edit,
                                           lo::Int, hi::Int, offset::Int) where {T,V}
-    child isa EmptyFT && return child, lo, offset
     updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
-    updated::FingerTreeRepV{T,V}, next, stop
+    updated::SingleFT{T,V}, next, stop
+end
+
+@inline function _mmultiedit_finger_child(op::_MeasureOp,
+                                          child::DeepFT{T,V}, indices, edit,
+                                          lo::Int, hi::Int, offset::Int) where {T,V}
+    updated, next, stop = _mmultiedit_child_impl(op, child, indices, edit, lo, hi, offset)
+    updated::DeepFT{T,V}, next, stop
 end
 
 @inline function _mmultiedit_children(op::_MeasureOp, children::Tuple{A}, indices,
@@ -1989,7 +1999,10 @@ end
 
 function _mmultiedit(op::_MeasureOp, digit::DNode{T,N,V}, indices, edit,
                      lo::Int, hi::Int, offset::Int)::DNode{T,N,V} where {T,N,V}
-    _mmultiedit_digit(op, digit, indices, edit, lo, hi, offset)
+    children, next, _ =
+        _mmultiedit_children(op, digit.child, indices, edit, lo, hi, offset)
+    next == hi + 1 || throw(BoundsError())
+    _dnode_cached(op, children)
 end
 
 function _mmultiedit_tree23(op::_MeasureOp, node::Tree23, indices, edit,
@@ -1999,6 +2012,7 @@ function _mmultiedit_tree23(op::_MeasureOp, node::Tree23, indices, edit,
     next == hi + 1 || throw(BoundsError())
     _unchecked_tree23(op, children...)
 end
+
 
 function _mmultiedit(op::_MeasureOp, node::Leaf23{T,V}, indices, edit,
                      lo::Int, hi::Int, offset::Int)::Leaf23{T,V} where {T,V}
@@ -2012,7 +2026,11 @@ end
 
 function _mmultiedit(op::_MeasureOp, single::SingleFT{T,V}, indices, edit,
                      lo::Int, hi::Int, offset::Int)::SingleFT{T,V} where {T,V}
-    _single(op, _mmultiedit(op, single.a, indices, edit, lo, hi, offset))
+    child = single.a
+    child isa Tree23{T} ?
+        _single(op, _mmultiedit(
+            op, child::Tree23RepV{T,V}, indices, edit, lo, hi, offset)) :
+        _single(op, _mmultiedit(op, child::T, indices, edit, lo, hi, offset))
 end
 
 function _mmultiedit(op::_MeasureOp, tree::DeepFT{T,V}, indices, edit,
@@ -2025,7 +2043,7 @@ function _mmultiedit(op::_MeasureOp, tree::DeepFT{T,V}, indices, edit,
     right_result =
         _mmultiedit_digit_child(op, tree.right, indices, edit, next, hi, stop)
     right_result.next == hi + 1 || throw(BoundsError())
-    _unchecked_deep(op, left_result.digit, middle, right_result.digit)
+    _deep(op, left_result.digit, middle::FingerTreeRepV{T,V}, right_result.digit)
 end
 
 _mmultiedit(::Any, tree::EmptyFT, ::Any, ::Any, ::Int, ::Int, ::Int) =
