@@ -169,6 +169,14 @@ function _dnode(op::_MeasureOp, children::NTuple{N,<:Tree23{T}}) where {N,T}
     DNode{T,N,typeof(cache.value)}(children, cache.len, cache.value)
 end
 
+# The unmeasured hot path does not need to forward the children through
+# `_cache_many`.  Besides the redundant work, that recursive vararg call can
+# materialize an extra tuple during pop and split reconstruction.
+@inline _dleaf(::_NoMeasure, children::NTuple{N,T}) where {N,T} =
+    DLeaf{T,N,Nothing}(children, N, nothing)
+@inline _dnode(::_NoMeasure, children::NTuple{N,<:Tree23{T}}) where {N,T} =
+    DNode{T,N,Nothing}(children, sum(len, children), nothing)
+
 @inline function _dnode_cached(op::_MeasureOp,
                                children::Tuple{Tree23RepV{T,V}})::DNode{T,1,V} where {T,V}
     cache = _cache_many(op, children...)
@@ -203,7 +211,20 @@ DigitFT(values...) = _unchecked_digit(values...)
 
 _unchecked_digit(op::_MeasureOp, values...) = _dleaf(op, values)
 _unchecked_digit(op::_MeasureOp, values::Tree23{T}...) where {T} = _dnode(op, values)
-_unchecked_digit(values...) = _unchecked_digit(_NO_MEASURE, values...)
+
+# Fixed arities avoid forming a second vararg tuple merely to add the
+# `_NO_MEASURE` argument.  Digits are restricted to widths one through four.
+@inline _unchecked_digit(a) = _dleaf(_NO_MEASURE, (a,))
+@inline _unchecked_digit(a, b) = _dleaf(_NO_MEASURE, (a, b))
+@inline _unchecked_digit(a, b, c) = _dleaf(_NO_MEASURE, (a, b, c))
+@inline _unchecked_digit(a, b, c, d) = _dleaf(_NO_MEASURE, (a, b, c, d))
+@inline _unchecked_digit(a::Tree23{T}) where {T} = _dnode(_NO_MEASURE, (a,))
+@inline _unchecked_digit(a::Tree23{T}, b::Tree23{T}) where {T} =
+    _dnode(_NO_MEASURE, (a, b))
+@inline _unchecked_digit(a::Tree23{T}, b::Tree23{T}, c::Tree23{T}) where {T} =
+    _dnode(_NO_MEASURE, (a, b, c))
+@inline _unchecked_digit(a::Tree23{T}, b::Tree23{T}, c::Tree23{T}, d::Tree23{T}) where {T} =
+    _dnode(_NO_MEASURE, (a, b, c, d))
 
 function digit(op::_MeasureOp, n::Tree23{T}) where T
     if isnothing(n.c)
@@ -212,6 +233,12 @@ function digit(op::_MeasureOp, n::Tree23{T}) where T
         _unchecked_digit(op, n.a, n.b, something(n.c))
     end
 end
+@inline function _digit_unmeasured(n::Tree23{T}) where {T}
+    isnothing(n.c) ? _unchecked_digit(n.a, n.b) :
+        _unchecked_digit(n.a, n.b, something(n.c))
+end
+digit(n::Leaf23{T,Nothing}) where {T} = _digit_unmeasured(n)
+digit(n::Node23{T,Nothing}) where {T} = _digit_unmeasured(n)
 digit(n::Tree23) = digit(_NO_MEASURE, n)
 digit(op::_MeasureOp, t::NTuple) = _unchecked_digit(op, t...)
 digit(op::_MeasureOp, value) = _unchecked_digit(op, value)
@@ -257,6 +284,10 @@ function _deep(op::_MeasureOp, left::DigitFT{T}, middle::FingerTree{T}, right::D
     V = typeof(cache.value)
     DeepFT{T,V}(left, middle, right, cache.len, cache.value)
 end
+
+@inline _deep(::_NoMeasure, left::DigitFT{T}, middle::FingerTree{T}, right::DigitFT{T}) where {T} =
+    DeepFT{T,Nothing}(left, middle, right,
+                      len(left) + len(middle) + len(right), nothing)
 
 function DeepFT(left::DigitFT{T}, middle::FingerTree{T}, right::DigitFT{T}) where {T}
     balanced = dep(left) == dep(middle) - 1 == dep(right) ||
@@ -800,19 +831,19 @@ function _viewr_node(ft::DeepFT{T,Nothing}, right::DNode{T,N,Nothing})::NodeRigh
 end
 
 @inline function _viewl_leaf(ft::DeepFT{T,Nothing})::LeafLeftView{T,Nothing} where {T}
-    _viewl_leaf(ft, ft.left)
+    _viewl_leaf(ft, ft.left::DLeaf{T})
 end
 
 @inline function _viewr_leaf(ft::DeepFT{T,Nothing})::LeafRightView{T,Nothing} where {T}
-    _viewr_leaf(ft, ft.right)
+    _viewr_leaf(ft, ft.right::DLeaf{T})
 end
 
 function _viewl_node(ft::DeepFT{T,Nothing})::NodeLeftView{T,Nothing} where {T}
-    _viewl_node(ft, ft.left)
+    _viewl_node(ft, ft.left::DNode{T})
 end
 
 function _viewr_node(ft::DeepFT{T,Nothing})::NodeRightView{T,Nothing} where {T}
-    _viewr_node(ft, ft.right)
+    _viewr_node(ft, ft.right::DNode{T})
 end
 
 splitl(ft::EmptyFT) = throw(BoundsError(ft))
